@@ -83,16 +83,21 @@ contributed to the class score. Say this in the viva; do not oversell the heatma
 
 ### Bias and subgroup performance
 
-| Slice | n | AUROC | Gap vs overall |
+| Slice | n (whole archive) | AUROC on the held-out test split | Gap vs overall |
 |---|---|---|---|
 | Sex = M | 15,166 | `TODO` | `TODO` |
 | Sex = F | 11,518 | `TODO` | `TODO` |
-| Age < 40 | 9,044 | `TODO` | `TODO` |
-| Age 40–59 | 11,667 | `TODO` | `TODO` |
-| Age 60–79 | 5,731 | `TODO` | `TODO` |
-| Age 80–110 | 242 | `TODO` | `TODO` |
+| Age 0-39 | 9,044 | `TODO` | `TODO` |
+| Age 40-59 | 11,667 | `TODO` | `TODO` |
+| Age 60-79 | 5,731 | `TODO` | `TODO` |
+| Age 80+ | 242 | `TODO` | `TODO` |
 | Label source = `Normal` | 8,851 | `TODO` | `TODO` |
 | Label source = `No Lung Opacity / Not Normal` | 11,821 | `TODO` | `TODO` |
+
+The `n` column is the whole archive; the AUROCs come from the ~4,003-image test split only, so each row's actual
+sample is roughly one sixth of these counts and the bootstrap interval in `results/gradcam_fairness_summary.json`
+(one subgroup table per row, same band labels — `sex`, `age_band`, `class_source`, `sex_x_age`) is the number to read
+with the table. Fill this from `notebooks/04_gradcam_fairness.ipynb`, not by re-binning anything.
 
 Slice counts and the sex/age values come from the DICOM tags, recovered in `notebooks/01_eda.ipynb` §3 and written
 into `results/split_*.csv`. Observed label prevalence before any model is involved: 21.7 % female vs 23.1 % male,
@@ -187,11 +192,11 @@ the average. `TODO` include the per-case table.
 
 | Item | Value |
 |---|---|
-| Commit hash | `TODO` (repo has no commit yet) |
-| DVC data revision | images `3fd56c2857f39d9f9df084ddadd7c8de.dir` (26,684 files, 3,555,311,924 B); `stage_2_train_labels.csv` `010a01a3f9a7cf76cb14704a95b22263`; `stage_2_detailed_class_info.csv` `c3bb15f6d279cfe39e09da8903902478`; derived header cache `dicom_headers.csv` `28b6ca9e1af3dde6e89e0cc3a755a3c9` |
-| DVC remote | Google Drive (`gdrive://<FOLDER_ID>`) — `dvc push` pending the one-time browser OAuth |
+| Commit hash | `62511731238215809b258a92a9bfe1383943a958` at the time of writing. It moves every time a result is committed, so re-read `git rev-parse HEAD` before the presentation rather than trusting this row |
+| DVC data revision | images `3fd56c2857f39d9f9df084ddadd7c8de.dir` (26,684 files, 3,555,311,924 B); same images as one archive `a8307fbc6d9138a7760dafde21383714` (3,534,067,864 B), which is the object `dvc push` transfers; `stage_2_train_labels.csv` `010a01a3f9a7cf76cb14704a95b22263`; `stage_2_detailed_class_info.csv` `c3bb15f6d279cfe39e09da8903902478`; derived header cache `dicom_headers.csv` `28b6ca9e1af3dde6e89e0cc3a755a3c9` |
+| DVC remote | `gdrive://1_MZ3txKpgRucQ5Ep8YxZAbKovIzDJFiL` (a private Drive folder named `aiml02-dvc-remote`). Two independent obstacles had to be cleared, both recorded in `README.md`: the plugin's shared OAuth client is refused by Google for the `drive` scope — fixed by registering a personal **Desktop app** client and enabling the Google Drive API on that project (a *Web application* client can never work, because pydrive2 redirects to `http://localhost:8080/`) — and pushing the image folder would mean 26,688 separate Drive uploads, fixed by pushing the archive instead. Only the archive and the three CSVs are pushed; the folder revision above stays as the per-image md5 provenance record. |
 | Seed | 7 |
-| Runtime | Google Colab, Tesla T4 |
+| Runtime | baselines L0-L2: this laptop, CPU only, torch 2.11.0+cpu, **executed**. L3 DenseNet121: **not executed yet** — `notebooks/03_train_densenet.ipynb` runs on a hosted GPU (Kaggle T4, or Colab T4 if the free quota returns) and records the real `host`/`device`/`torch`/`cuda` in `densenet_metrics.json`'s `runtime` block. A laptop CPU smoke run is written as `host: local` and is a code check, not a result |
 | Package versions | `requirements.txt` |
 | Environment that produced the baseline numbers | `results/environment.json` — Python 3.13.1, torch 2.11.0+cpu, numpy 2.4.3, scikit-learn 1.9.1, pydicom 3.0.2 |
 | Reproduction status of the baselines | Ran twice end to end, every AUROC and PR-AUC identical to 4 decimal places, threshold reproduced at 0.163. Determinism holds *within* this environment; it is not claimed across environments, because the pinned `torch==2.4.1` / `numpy==1.26.4` cannot even install on 3.13 (no cp313 wheels) |

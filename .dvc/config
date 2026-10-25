@@ -1,4 +1,7 @@
 [core]
     remote = gdrive
+[cache]
+    type = "hardlink,copy"
 ['remote "gdrive"']
-    url = gdrive://1QwlRPBEYqIrQBq3arCPfO8fGojCiY7Xx
+    url = gdrive://1_MZ3txKpgRucQ5Ep8YxZAbKovIzDJFiL
+    gdrive_acknowledge_abuse = true

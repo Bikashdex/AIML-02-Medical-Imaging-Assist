@@ -149,15 +149,34 @@ held out, and the per-case Dice table.
 
 All data is de-identified at source and used under non-commercial terms. No patient data is committed to this
 repository: the files under `data/` are git-ignored and held in DVC's cache, and only the `.dvc` pointer files —
-which contain md5 digests and sizes, never pixels — are committed. The remote is Google Drive. This separation is
-deliberate: a reviewer can verify the exact bytes this project trained on from git alone, without being handed any
-image.
+which contain md5 digests and sizes, never pixels — are committed. The remote is Google Drive, reachable only after
+registering a personal **Desktop app** OAuth client, because `dvc-gdrive`'s built-in shared client is refused the
+`drive` scope by Google; the whole sequence is in `README.md`. The training machine still receives the images through
+a plain Drive upload of the original archive rather than `dvc pull`, because Colab cannot run that interactive OAuth
+flow. This separation is deliberate either way: a reviewer can
+verify the exact bytes this project trained on from git alone, without being handed any image.
 
 | DVC-tracked target | Revision (md5) | Bytes | Files |
 |---|---|---|---|
 | `stage_2_train_images/` | `3fd56c2857f39d9f9df084ddadd7c8de.dir` | 3,555,311,924 | 26,684 |
+| `stage_2_train_images.zip` (same 26,684 files, archived) | `a8307fbc6d9138a7760dafde21383714` | 3,534,067,864 | 1 |
 | `stage_2_train_labels.csv` | `010a01a3f9a7cf76cb14704a95b22263` | 1,490,034 | 1 |
 | `stage_2_detailed_class_info.csv` | `c3bb15f6d279cfe39e09da8903902478` | 1,647,396 | 1 |
 | `dicom_headers.csv` (derived by `tools/scan_dicom_headers.py`) | `28b6ca9e1af3dde6e89e0cc3a755a3c9` | 8,860,923 | 1 |
+
+The images exist twice in DVC on purpose. The **folder** is the provenance record — 26,684 per-file md5s, which is
+what lets a reviewer confirm the exact bytes behind every metric from git alone. The **archive** is the transport
+record, because `dvc push` uploads one Drive object per cache file and 26,688 of them would take hours against
+Drive's rate limits; the archive makes the push a single 3.5 GB resumable upload.
+
+**What is actually in the remote.** The four single-file targets above are pushed to
+`gdrive://1_MZ3txKpgRucQ5Ep8YxZAbKovIzDJFiL` and were checked back: Drive reports the archive object at
+`files/md5/a8/307fbc6d9138a7760dafde21383714` with 3,534,067,864 bytes, i.e. exactly the size the pointer file
+records, and the three CSVs at their own md5 paths with matching sizes (1,490,034 / 1,647,396 / 8,860,923 B).
+`dvc status -c` says *Cache and remote 'gdrive' are in sync*. The image **folder** is not in the remote: its bytes are
+already inside the archive, so pulling those 26,684 objects separately would buy nothing. A reviewer who wants the
+pixels runs `dvc pull data/raw/rsna/stage_2_train_images.zip.dvc`; a reviewer who wants to verify the pixels match the
+provenance record unzips it and compares against the folder revision. That folder id is public once this repo is — the
+folder itself is private and holds no patient file that is not already inside the archive.
 
 This system is for education only and is not a medical device.

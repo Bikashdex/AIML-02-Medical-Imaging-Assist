@@ -65,3 +65,7 @@ Thumbs.db
 # Checkpoint notebooks and ad-hoc experiment dumps are not. ---
 */ipynb_checkpoints/
 results/experiments/
+
+# Notebooks 03/04 write here when RUN_ON == "local" (a CPU smoke run). Scratch, never a deliverable.
+notebooks/_nb03_scratch/
+notebooks/_nb04_scratch/

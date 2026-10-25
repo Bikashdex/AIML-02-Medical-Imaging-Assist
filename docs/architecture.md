@@ -100,7 +100,7 @@ Paged list from the audit table for the viewer.
 | Binary opacity-vs-not, not 14 findings | One clean question, measurable; multi-label on a small subset is unreliable | Ignores the richer label space, and 57 % of negatives are "abnormal for another reason" |
 | Grad-CAM instead of SHAP | SHAP over 224×224 pixels is computationally impractical; an activation map is what a radiologist can read | Not a Shapley-value guarantee — do not call it one |
 | SQLite for the audit log | Single-node demo, zero ops | No row-level security, no concurrent writers |
-| Google Drive as DVC remote | Local disk is ~27 GB; the dataset is ~3.4 GB extracted plus Track B's ~2.3 GB | Slow first pull; a real deployment wants S3/GCS |
+| Google Drive as DVC remote | Local disk is ~22 GB free; the dataset is ~3.4 GB extracted plus Track B's ~2.3 GB | Slow first pull; a real deployment wants S3/GCS. Works only with a **personal Desktop-app OAuth client** — `dvc-gdrive`'s shared client is refused the `drive` scope — and only for the single archive object, since the image folder would be 26,688 separate uploads. Colab cannot run that interactive consent flow, so training data moves by direct Drive upload instead of `dvc pull`. Setup details in `README.md` |
 | Orthanc polls rather than pushes | Simpler to reason about and to record a demo against | Adds up to `POLL_INTERVAL_SECONDS` latency |
 
 ## 5. Security and privacy notes

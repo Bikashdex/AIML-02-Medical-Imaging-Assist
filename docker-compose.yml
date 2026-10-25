@@ -1,0 +1,60 @@
+services:
+  orthanc:
+    image: orthancteam/orthanc:latest
+    # Pin this to the exact tag you actually pulled: docker image inspect orthancteam/orthanc --format '{{.RepoTags}}'
+    container_name: aiml02-orthanc
+    ports:
+      - "8042:8042"   # REST + DICOMweb (HTTP)
+      - "4242:4242"   # DICOM receive port (C-STORE)
+    volumes:
+      - orthanc-db:/var/lib/orthanc/db
+      - ./configs/orthanc.json:/etc/orthanc/orthanc.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8042/system"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: aiml02-api
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_PATH: /models/classifier.pt
+      UNET_PATH: /models/unet3d.pt
+      AUDIT_DB_URL: sqlite:////data/audit.db
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:-}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:-}
+      LOG_LEVEL: INFO
+    volumes:
+      - ./artifacts:/models:ro
+      - audit-data:/data
+    depends_on:
+      orthanc:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ingest:
+    build: .
+    container_name: aiml02-ingest
+    command: ["python", "-m", "src.ingest.orthanc_poller"]
+    environment:
+      MODEL_PATH: /models/classifier.pt
+      AUDIT_DB_URL: sqlite:////data/audit.db
+      ORTHANC_URL: http://orthanc:8042
+      API_URL: http://api:8000
+      POLL_INTERVAL_SECONDS: "5"
+    volumes:
+      - ./artifacts:/models:ro
+      - audit-data:/data
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  orthanc-db:
+  audit-data:
