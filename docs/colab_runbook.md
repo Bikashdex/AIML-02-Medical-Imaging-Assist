@@ -1,5 +1,10 @@
 # Colab runbook — notebooks 03 and 04
 
+> **Status 2026-10-25: the Colab quota is exhausted — use
+> [`docs/kaggle_runbook.md`](kaggle_runbook.md) (Kaggle T4) as the primary
+> runbook for now.** Both notebooks auto-detect the host, so everything below
+> stays valid when the quota resets.
+
 How to take the training notebooks from "written" to "ran on a real GPU", and what
 evidence to bring back. Everything below matches the paths the notebooks already
 search, so there is nothing to edit in the notebooks themselves.
