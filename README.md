@@ -46,7 +46,7 @@ Required by the brief, and where each one is used:
 │   ├── architecture.md        system diagram + data flow + API contract
 │   ├── dataset_card.md        provenance, licence, label policy, splits
 │   └── model_card.md          limits, bias, intended use  ← required by the brief
-├── notebooks/                 01-02 run locally, 03-04 on Kaggle (also Colab; CPU-tested locally)
+├── notebooks/                 01-02 run locally, 03-05 on Kaggle (also Colab; CPU-tested locally)
 ├── src/
 │   ├── data/                  DICOM I/O, patient-level splits, datasets
 │   ├── models/                classifier, 3D U-Net, Grad-CAM

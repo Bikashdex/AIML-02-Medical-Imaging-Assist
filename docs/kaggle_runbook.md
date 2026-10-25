@@ -97,10 +97,15 @@ Upload it once as a private dataset:
 - **Never quote a `host: local` run** as a result — the notebooks record the
   host inside their metrics JSON for exactly this reason.
 
-## 6. Not covered here yet
+## 6. Session C — `05_segment_spleen.ipynb` (MONAI spleen, Phase 3b)
 
-- **Notebook 05 (MONAI spleen, DynUNet)** does not exist yet — the previous
-  chat discussed it and staged the vendored wheels for it, but no notebook file
-  was ever saved. Building it is a coding task in the repo; it then runs here as
-  Session C (same Add Input pattern; `tools/get_msd_spleen.py` fetches
-  Task09_Spleen — that download does need Internet on, once).
+The notebook now exists (built 2026-10-25): DynUNet + deep supervision + sliding-window
+inference, rewritten onto `src/data/ct_volume.py` and `src/models/unet3d.py`, resumable
+checkpoints, per-case Dice table with a failure-case overlay. Session shape is the same:
+**GPU T4**, attach `repo.zip`, **Run All**, **Save Version**.
+
+One difference — the dataset: MSD Task09_Spleen is *not* a Kaggle competition input. Either
+attach `Task09_Spleen.tar` as a private dataset (URL + expected md5 are pinned in
+`results/msd_spleen_manifest.json`), or leave Internet **on** for the dataset cell and let
+`tools/get_msd_spleen.py` download + md5-verify it itself. Everything else (MONAI/nibabel
+wheels, ImageNet weights) still works offline.

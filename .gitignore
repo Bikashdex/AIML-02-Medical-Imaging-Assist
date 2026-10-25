@@ -66,6 +66,7 @@ Thumbs.db
 */ipynb_checkpoints/
 results/experiments/
 
-# Notebooks 03/04 write here when RUN_ON == "local" (a CPU smoke run). Scratch, never a deliverable.
+# Notebooks 03/04/05 write here when RUN_ON == "local" (a CPU smoke run). Scratch, never a deliverable.
 notebooks/_nb03_scratch/
 notebooks/_nb04_scratch/
+notebooks/_nb05_scratch/
