@@ -116,3 +116,17 @@ attach `Task09_Spleen.tar` as a private dataset (URL + expected md5 are pinned i
 `results/msd_spleen_manifest.json`), or leave Internet **on** for the dataset cell and let
 `tools/get_msd_spleen.py` download + md5-verify it itself. Everything else (MONAI/nibabel
 wheels, ImageNet weights) still works offline.
+
+Two things were learned by running it on 2026-10-26, and the notebook now carries both:
+
+- **192³ crops at batch 2 do not fit a T4.** The first attempt allocated 14.28 GiB of the
+  14.56 GiB card on training step 1 and died in `DiceCELoss`. The `CONFIG` default is now
+  `roi = [128, 128, 128]`, the patch size MONAI's own spleen tutorial trains on.
+- **Whole-volume load + resample dominated the epoch.** `patch_stream` pulled a fresh CT per
+  patch; `load_cached` now keeps the 28 training volumes in RAM (about 2.7 GB at
+  334×334×181 float32 + mask), because loading one volume takes seconds and cropping it
+  does not.
+
+The budget run is `epochs_total = 40` at 64 steps/epoch; the full schedule is 100–200
+epochs, and `spleen_metrics.json` records the config so a 40-epoch number is never quoted
+as a longer one.
