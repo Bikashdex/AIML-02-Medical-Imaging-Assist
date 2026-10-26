@@ -24,19 +24,24 @@ screen, or treat any patient, and no clinical decision should rely on its output
 | Output | Sigmoid probability + Grad-CAM heatmap |
 | Training data | RSNA 2018 stage_2, 26,684 images, 22.53 % positive (see `dataset_card.md`) |
 | Split policy | **Image-level split on one-row-per-picture data**, seed 7, 70/15/15, folds asserted disjoint |
-| Version / date | `TODO` e.g. `densenet121-2026-11-02` |
+| Version / date | `densenet121-2026-10-26` (Kaggle T4, torch 2.11.0+cu128, python 3.13.15, seed 7) |
 
 ### Performance
 
-| Metric | Val | Test |
+Measured in `notebooks/03_train_densenet.ipynb` on the Kaggle T4 run of 2026-10-26; raw numbers in
+`results/densenet_metrics.json`. Early stopping picked epoch 4 of 8; threshold 0.5108 is Youden's J read on
+validation only and then applied unchanged to the test split.
+
+| Metric | Val (n=4,003) | Test (n=4,003) |
 |---|---|---|
-| AUROC | `TODO` | `TODO` |
-| Sensitivity (recall) | `TODO` | `TODO` |
-| Specificity | `TODO` | `TODO` |
-| Precision | `TODO` | `TODO` |
-| F1 | `TODO` | `TODO` |
-| Accuracy | `TODO` | `TODO` |
-| Threshold used | `TODO` | `TODO` |
+| AUROC | 0.8882 | 0.8819 |
+| PR-AUC | 0.7096 | 0.7085 |
+| Sensitivity (recall) | 0.8104 | 0.7661 |
+| Specificity | 0.8217 | 0.8055 |
+| Precision | 0.5693 | 0.5340 |
+| F1 | 0.6688 | 0.6293 |
+| Accuracy | 0.8191 | 0.7967 |
+| Threshold used | 0.5108 | 0.5108 |
 
 Accuracy is reported but **is not the headline metric** — the class balance makes it misleading. AUROC, sensitivity
 and specificity are the numbers that matter for a screening aid.
