@@ -1,7 +1,8 @@
 # Model card
 
 > Portal step 7: *"Containerize with Docker and document the model's limits and bias. Include a clear 'for education
-> only, not clinical use' notice."* This file **is** that deliverable. Fill every `TODO` from your own runs.
+> only, not clinical use' notice."* This file **is** that deliverable. Every number below is filled from a measured
+> run except Track B, which is explicitly marked pending — nothing here is a placeholder.
 
 ## ⚠ Intended use
 
@@ -11,6 +12,21 @@ This is not a medical device. It has no FDA, CE, or CDSCO clearance. It must not
 screen, or treat any patient, and no clinical decision should rely on its output.
 
 ---
+
+## Where these numbers come from
+
+| Section | Source of truth | Host and sample |
+|---|---|---|
+| Track A metrics, confusion matrix, baseline comparison | `results/densenet_metrics.json` — notebook 03, kernel `bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray` | Kaggle T4, 4,003 test images |
+| Calibration | `results/calibration.json`, computed from `results/test_predictions_with_metadata.csv` | same 4,003-image test split |
+| Subgroups, Grad-CAM | `results/gradcam_fairness_summary.json` and `results/gradcam_focus.csv` — notebook 04, kernel `bikash24795/aiml-02-notebook-04-grad-cam-and-fairness` | Kaggle T4, same split |
+| Track B | **pending** — the only executed copy is a local CPU smoke run | not reportable |
+
+The `notebooks/_smoke/executed_*.ipynb` files are **local CPU smoke runs**, kept to prove the code paths execute:
+notebook 03 was exercised on 96/60/40 images for 3 epochs (test AUROC 0.9475 on 40 images) and notebook 05 on a
+64³ ROI for 1 epoch over 2 test cases. They are not the source of any number in this card — their test sets are two
+orders of magnitude smaller than the real one. Where a smoke number and a Kaggle number disagree, the Kaggle number
+is the one that counts.
 
 ## Track A — Chest X-ray pneumonia classifier
 
@@ -67,12 +83,13 @@ train ones.
 | DenseNet121, fine-tuned (this model) | 0.8882 | **0.8819** | Beats the 0.740 bar by **+0.142** test AUROC. Early stopping picked epoch 4 of 8 (`results/densenet_metrics.json`) |
 
 The frozen-feature row scoring *below* the pixel row is a result, not a mistake. Pretrained ImageNet features are
-tuned for natural photographs; the value of transfer learning here appears only once the weights are fine-tuned.
-If the DenseNet lands around 0.85, this table is the evidence for where the gain came from. If it lands near 0.74,
-say so.
+tuned for natural photographs; the value of transfer learning here appears only once the weights are fine-tuned —
+and it does: fine-tuning moves that backbone from 0.7250 to **0.8819** test AUROC, +0.157, which is the answer to
+"did transfer learning add anything" that this table exists to give.
 
-Scoring convention: test numbers are taken at threshold **0.163**, Youden's J read on validation only. At that
-threshold the pixel baseline reaches sensitivity 0.698 / specificity 0.663 on the test subset.
+Thresholds are not shared across rows. The pixel baseline's test numbers are taken at its own **0.163**, Youden's J
+read on validation only; at that cut-off it reaches sensitivity 0.698 / specificity 0.663. The DenseNet's numbers
+use its own 0.5108. AUROC leads the table because it is the one number that does not depend on that choice.
 
 A random forest was not used as a baseline. The three levels above - constant, hand-of-pixels, frozen-CNN - isolate
 the two things worth separating (representation and fine-tuning), which a second tree model on the same 1,024
@@ -235,23 +252,39 @@ the model changes radiologist behaviour at all.
 
 | Field | Value |
 |---|---|
-| Architecture | `DynUNet`, 3D, deep supervision |
+| Architecture | `DynUNet`, 3D, deep supervision (5 downsamples, filters to 320, 31,409,478 params) |
 | Input | CT volume resampled to 1.5 mm iso, windowed to [-150, 200] HU |
 | Output | Binary spleen mask |
-| Training data | MSD Task09_Spleen, 41 volumes |
+| Training data | MSD Task09_Spleen, 41 volumes — 28 train / 7 val / 6 test, seed 7, patient-safe by construction |
 | Metric | Mean Dice, plus per-case Dice |
 | Inference | Sliding window (0.5 overlap, Gaussian blend), ROI 128³ |
+| Status | **Not measured on a hosted GPU.** The only executed copy on disk is a local CPU smoke test — see below |
 
 | Metric | Value |
 |---|---|
-| Mean Dice (val) | `TODO` |
-| Mean Dice (test) | `TODO` |
-| Worst-case Dice | `TODO` |
-| Median inference time / volume | `TODO` |
+| Mean Dice (val) | not measured — no hosted run has completed |
+| Mean Dice (test) | not measured |
+| Worst-case Dice | not measured |
+| Median inference time / volume | not measured |
+
+**Why this table is empty, stated plainly.** `notebooks/_smoke/executed_05_segment_spleen.ipynb` *is* executed, but
+it is a code-path check, not a result: its host block says `run_on: local`, `device: cpu`, and the smoke override
+ran **1 epoch / 2 optimizer steps with a 64³ ROI over 2 test cases**. It scored mean Dice **0.0142** (`spleen_10`
+0.0109, `spleen_21` 0.0175), predicting ~3,300 ml where the references are 71 and 111 ml. That is exactly what one
+step of training should produce, and it must not be quoted as segmentation performance — the repo's own rule
+(§5 of the runbook) is that a `host: local` run is a code check and never a result.
+
+The Kaggle T4 attempt (kernel `bikash24795/aiml-02-notebook-05-monai-spleen-segmentation`, version 3) failed on
+training step 1: 192³ crops at batch 2 allocated 14.28 GiB of the 14.56 GiB card and died inside `DiceCELoss`. The
+committed fix moves to **128³** (the patch size MONAI's own spleen tutorial uses), sets
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, and caches the 28 training volumes in RAM; it was pushed as
+version 4. Version 4's terminal status could not be confirmed, because the local Kaggle CLI is unavailable
+(see the runbook) and the remaining GPU budget was not to be spent on speculative checks. **Until that run's
+`spleen_metrics.json` is pulled, Track B has no reportable Dice number.**
 
 **Limits:** trained on 41 volumes from a single collection. Small spleens, post-surgical anatomy, and unusual
-contrast timing are underrepresented. A low-Dice tail matters more than the mean — report the worst cases, not just
-the average. `TODO` include the per-case table.
+contrast timing are underrepresented. A low-Dice tail matters more than the mean — when the hosted run lands,
+report the worst cases and `n_below_0_5`, not just the average.
 
 ---
 

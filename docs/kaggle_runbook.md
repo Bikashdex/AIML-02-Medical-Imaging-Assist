@@ -1,6 +1,6 @@
-# Kaggle runbook — notebooks 03 and 04
+# Kaggle runbook — notebooks 03, 04 and 05
 
-**Primary runbook while the Colab quota is exhausted.** Both notebooks detect the
+**Primary runbook while the Colab quota is exhausted.** All three notebooks detect the
 host from the filesystem (`RUN_ON = "kaggle"` when `/kaggle` exists), so nothing
 in them needs editing — this file is about the Kaggle-specific clicks.
 
@@ -18,25 +18,44 @@ in them needs editing — this file is about the Kaggle-specific clicks.
 
 ## 1. repo.zip — the code archive (once)
 
-Use `repo.zip` from the workspace folder (regenerated 2026-10-26 from commit de05502,
-~38 MB). It carries `src/`, `results/split_*.csv`, the notebooks, the vendored
-monai/nibabel wheels, and `weights/densenet121-a639ec97.pth` — the ImageNet
-weights are inside on purpose: `src/models/classifier.py` copies them into the
+Use `repo.zip` from the workspace folder (~38 MB). It carries `src/`, `results/split_*.csv`,
+the notebooks, the vendored monai/nibabel wheels, and `weights/densenet121-a639ec97.pth` —
+the ImageNet weights are inside on purpose: `src/models/classifier.py` copies them into the
 torch hub cache so **no internet is needed during the run**.
 
-Upload it once as a private dataset (done: `bikash24795/aiml02-code`):
+Upload it once as a private dataset. The **canonical dataset that all three kernels attach is
+`bikash24795/aiml02-code`** (last updated 2026-10-26 08:25 UTC). The earlier uploads —
+`bikash24795/aiml02-repo`, `bikash24795/repo-zip`, and `bikash24795/repo1-zip` — plus the
+`bikash24795/aiml02-probe` scratch dataset still exist, but no kernel uses them.
 
 1. kaggle.com → Datasets → **New Dataset** → drag `repo.zip` → Create.
    (Private by default — keep it that way; it is your coursework.)
 2. From then on, attaching it to any notebook is one click (Add Input → Your
    Datasets). Alternatively drag the zip into Add Input → Upload per session.
 
-Kaggle **unzips** a zip uploaded to a dataset, so the attached input lands as a
-plain tree — `/kaggle/input/aiml02-code/{src,results,weights,...}` — and there is
-no `repo.zip` file to find. The code-cell of notebooks 03/04/05 handles both
-shapes: it uses `repo.zip` when one exists, otherwise it finds the marker file in
-`/kaggle/input` and copies the extracted tree into scratch (`/kaggle/input` is
-read-only, and the cells write results next to the code).
+Kaggle **unzips** a zip uploaded to a dataset, so the attached input lands as a plain tree and
+there is no `repo.zip` file to find. The tree is **not** at `/kaggle/input/<slug>/`. In the
+2026-10-26 runs it landed at **`/kaggle/input/datasets/<owner>/<slug>/`**, i.e.
+`/kaggle/input/datasets/bikash24795/aiml02-code/{src,results,vendor,weights,...}` — visible in
+the notebook-03, -04 and -05 logs. Kernel outputs use a different shape,
+`/kaggle/input/notebooks/<owner>/<kernel-slug>/`. The code-cell of notebooks 03/04/05 handles
+both dataset shapes: it uses `repo.zip` when one exists, otherwise it finds the marker file at
+any depth under `/kaggle/input` and copies the extracted tree into scratch (`/kaggle/input` is
+read-only, and the cells write results next to the code). Do not hard-code
+`/kaggle/input/<slug>` — for a dataset upload that path does not exist.
+
+## 1b. The kernels as they stand (2026-10-26)
+
+| Notebook | Kernel slug | Status | Output files |
+|---|---|---|---|
+| 03 | `bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray` | COMPLETE, 06:52 UTC | `densenet121_lungopacity.pt`, `densenet_last.pt`, `densenet_metrics.json`, `densenet_training.png` |
+| 04 | `bikash24795/aiml-02-notebook-04-grad-cam-and-fairness` | COMPLETE, 07:17 UTC | `gradcam_fairness_summary.json`, `gradcam_focus.csv`, `gradcam_gallery.png`, `missing_data_audit.csv`, `test_predictions_with_metadata.csv` |
+| 05 | `bikash24795/aiml-02-notebook-05-monai-spleen-segmentation` | version 3 failed (OOM, 192³); version 4 pushed 2026-10-26 — **terminal status unverified**, the local CLI is unavailable (§4b) | `spleen_metrics.json`, `spleen_dynunet_best.pt`, `spleen_dynunet_last.pt`, `spleen_per_case.csv`, `spleen_overlays.png` |
+
+Kernels 03 and 04 are final — **do not re-run them**; their outputs are already pulled into
+`results/` and `artifacts/`. Notebook 04 reads notebook 03's checkpoint from
+`/kaggle/input/notebooks/bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray/`, so that
+kernel has to be attached as a *kernel source*, not just left finished.
 
 ## 2. Session A — `03_train_densenet.ipynb`
 
@@ -91,6 +110,18 @@ read-only, and the cells write results next to the code).
    checkpoint into `artifacts/`.
 3. Tell the chat — it will `dvc add` + `dvc push` the checkpoint (git stores
    only the pointer; `*.pt` is gitignored on purpose) and commit the rest.
+
+## 4b. The local Kaggle CLI is not a working path (2026-10-26)
+
+Do every status check and every output pull in the browser. `kaggle` is not on `PATH`, and the local Python
+install cannot be relied on to provide it: `py` points at a missing Python 3.13 interpreter, `python3` is the
+Microsoft Store stub, and Python 3.12 has no `kaggle` CLI of its own. Do not build a workflow that assumes
+`kaggle kernels status` or `kaggle kernels output` will run on this machine.
+
+Repairing the interpreter (installing 3.13 properly, or a pinned venv with the CLI) is a machine-level fix and
+is deliberately **not** part of this repo. Until it is done, the runbook's steps are manual: the kernel page shows
+status and the Output tab is the download. The credential file, when the CLI is restored, belongs at
+`~/.kaggle/access_token` for the 2.x CLI (the newer single-token format), not `kaggle.json`.
 
 ## 5. Gotchas
 
