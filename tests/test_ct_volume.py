@@ -44,7 +44,9 @@ def test_window_ct_maps_hu_endpoints_exactly():
 
 
 def test_window_ct_is_the_same_window_load_case_uses(tmp_path):
-    case = write_fake_case(str(tmp_path), "spleen_1")
+    # isotropic spacing so Spacing() is a no-op: this test is about the HU->[0,1] mapping, and bilinear
+    # resampling at the phantom's edges would introduce intermediate levels that belong to the next test.
+    case = write_fake_case(str(tmp_path), "spleen_1", spacing=(1.5, 1.5, 1.5))
     x, y, meta = load_case(case["image"], case["label"])
     assert meta["image_min_max"][0] >= 0.0 and meta["image_min_max"][1] <= 1.0
     # the phantom is either -300 HU (clips to 0) or 90 HU (inside the window). Exact values, because a
@@ -204,15 +206,17 @@ def test_sample_patch_is_seeded_and_reproducible():
 
 def test_flip_moves_image_and_label_together():
     x, y = _phantom()
-    rng = np.random.default_rng(4)
-    xf, yf = flip_patch(x, y, (0, 1, 2), rng)
+    # force every axis to flip: with a real RNG a seed can legitimately draw "no flip", and then this test
+    # would fail while the function is correct. Alignment is the property under test, not RNG luck.
+    always_flip = type("_AlwaysFlip", (), {"random": lambda self: 0.0})()
+    xf, yf = flip_patch(x, y, (0, 1, 2), always_flip)
     assert xf.shape == x.shape
     # a flipped pair must score itself exactly like the unflipped pair
     from src.models.unet3d import binary_dice
 
     assert binary_dice(xf > 0.5, yf) == pytest.approx(binary_dice(x > 0.5, y))
-    # and the blob must actually have moved, i.e. the flip was not a no-op on both axes
-    assert not np.array_equal(yf, y) or not np.array_equal(xf, x)
+    # the blob is off-centre, so a flip on every axis must move both arrays
+    assert not np.array_equal(yf, y) and not np.array_equal(xf, x)
 
 
 def test_flip_is_deterministic_from_the_generator():
