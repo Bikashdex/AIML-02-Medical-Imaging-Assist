@@ -18,13 +18,13 @@ in them needs editing — this file is about the Kaggle-specific clicks.
 
 ## 1. repo.zip — the code archive (once)
 
-Use `repo.zip` from the workspace folder (regenerated 2026-10-25, ~38 MB). It
-carries `src/`, `results/split_*.csv`, the notebooks, the vendored
+Use `repo.zip` from the workspace folder (regenerated 2026-10-26 from commit de05502,
+~38 MB). It carries `src/`, `results/split_*.csv`, the notebooks, the vendored
 monai/nibabel wheels, and `weights/densenet121-a639ec97.pth` — the ImageNet
 weights are inside on purpose: `src/models/classifier.py` copies them into the
 torch hub cache so **no internet is needed during the run**.
 
-Upload it once as a private dataset:
+Upload it once as a private dataset (done: `bikash24795/aiml02-code`):
 
 1. kaggle.com → Datasets → **New Dataset** → drag `repo.zip` → Create.
    (Private by default — keep it that way; it is your coursework.)
@@ -45,7 +45,7 @@ read-only, and the cells write results next to the code).
    Kaggle image ships torch/pydicom/sklearn, and repo.zip carries the weights.
 3. **Add Input** (right panel):
    - *Competitions* → RSNA Pneumonia Detection Challenge → `stage_2_train_images.zip`;
-   - *Your Datasets* → the `repo.zip` dataset.
+   - *Your Datasets* → `bikash24795/aiml02-code`.
 4. Import the notebook: in the editor **File → Import Notebook** → upload
    `notebooks/03_train_densenet.ipynb` from the repo. (If import is not
    offered, copy-paste all cells into a fresh notebook instead.)
@@ -66,10 +66,10 @@ read-only, and the cells write results next to the code).
 1. New notebook, **GPU T4**, Internet off.
 2. **Add Input:**
    - RSNA competition data (test images are decoded again);
-   - your `repo.zip` dataset;
-   - **Your Code → the notebook-03 kernel you saved** — its Output (checkpoint
-     `densenet121_lungopacity.pt` + `densenet_metrics.json`) lands under
-     `/kaggle/input/<kernel-slug>/`, which is exactly where this notebook hunts;
+   - the `bikash24795/aiml02-code` dataset;
+   - **Your Code → the notebook-03 kernel** (`bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray`)
+     — its Output (checkpoint `densenet121_lungopacity.pt` + `densenet_metrics.json`) lands
+     under `/kaggle/input/notebooks/<owner>/<kernel-slug>/`, which is where this notebook hunts;
    - `dicom_headers.csv` **if** you have it — grab it from your Drive `aiml02`
      folder and attach it the same way. Without it the notebook still runs,
      falling back to demographics inside the split CSVs (the cached scan is
