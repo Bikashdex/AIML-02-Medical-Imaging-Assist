@@ -316,12 +316,12 @@ project's development machine has 8 GB RAM and no GPU, so nothing here should be
 | 0 | Repo scaffold | ✅ done |
 | 1 | EDA + leakage-safe splits | ✅ done — `notebooks/01_eda.ipynb`, executed on the real 26,684 images |
 | 1 | DVC versioning | ✅ `dvc init` + `dvc add` + committed pointers + `dvc push` of the archive and 3 CSVs, verified by reading each object's size back from the Drive API and by `dvc status -c` reporting sync. Needed a personal **Desktop app** OAuth client and a real Drive folder id; both are recorded above so the next person does not rediscover them |
-| 2 | Baselines → DenseNet121 | 🟡 baselines measured in `notebooks/02_baseline_logreg.ipynb` - **constant 0.5000, pixel 0.7400, frozen-CNN 0.7250 test AUROC**. DenseNet must beat 0.740. `notebooks/03_train_densenet.ipynb` runs on **Kaggle** (Colab if its T4 quota returns; `RUN_ON`, one notebook) and every one of its 16 code cells has been executed end to end on this laptop with a 24/12/16-image subsample; the pretrained head is staged from `repo.zip` so a Kaggle kernel with **Internet off** builds the backbone - verified with the downloader sabotaged. **The GPU numbers are still outstanding** |
-| 3 | Grad-CAM + fairness | 🟡 `src/models/gradcam.py` is implemented and tested (13 tests: frozen-backbone, `no_grad`, empty-map, 7x7 grid on the real DenseNet121, overlay cut-off, Otsu body mask, `in_body_fraction` / `lateral_bias`). `notebooks/04_gradcam_fairness.ipynb` is written and every one of its 19 code cells has been executed on this laptop, chained to notebook 03's real checkpoint so the two notebooks agree on the same AUROC; the GPU run over the full 4,003-image test split is still to do |
-| 3b | MONAI 3D U-Net | ⬜ |
-| 4 | FastAPI + Orthanc + audit log + Docker | 🟡 code written, not yet run — needs the Docker daemon started |
-| 5 | React viewer | ⬜ |
-| 6 | Docs, tests, demo, presentation | 🟡 43 tests pass locally; docs carry verified dataset and baseline numbers, DenseNet results still TODO |
+| 2 | Baselines → DenseNet121 | ✅ trained on a **Kaggle T4** (2026-10-26, 8 epochs, early stop at 4): **test AUROC 0.8819**, val 0.8882, PR-AUC 0.7085, at threshold 0.5108 sens 0.7661 / spec 0.8055. Beats the 0.740 pixel baseline by +0.142 (`results/densenet_metrics.json`). The frozen-ResNet row scoring 0.7250 is the measured argument for fine-tuning |
+| 3 | Grad-CAM + fairness | ✅ run on the **Kaggle T4** over all 4,003 test images: AUROC 0.8819 (CI 0.8697–0.8916), 300 Grad-CAM maps scored for attention inside the body (43 % under half), subgroup tables for sex, age band and label source, missing-data audit all zero (`results/gradcam_fairness_summary.json`). Calibration measured post hoc: over-confident, ECE 0.1256 |
+| 3b | MONAI 3D U-Net | 🟡 `notebooks/05_segment_spleen.ipynb` written and smoke-run locally; the Kaggle GPU run is in progress. First attempt OOM'd at 192³, so crops are now 128³ and whole-volume loads are cached. **No Dice number is quotable until that run lands** |
+| 4 | FastAPI + Orthanc + audit log + Docker | 🟡 code written, not yet run — needs the Docker daemon started; the API has no automated test yet |
+| 5 | React viewer | 🟡 written (`frontend/src`, Approve / Reject, uncertainty band, education banner) and built once; not yet exercised against a running API in a browser |
+| 6 | Docs, tests, demo, presentation | 🟡 **78 tests pass locally**; dataset card, model card (DenseNet half) and both runbooks carry measured numbers. Spleen half of the model card, demo recording and the 10-minute presentation are outstanding |
 
 ## Licence and data terms
 
