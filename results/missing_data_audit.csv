@@ -1,0 +1,7 @@
+item,n_missing,n_total,pct_missing,policy
+test images with no 448px render in the cache,0,4003,0.0,rendered as an all-black frame so one failed decode cannot lose an epoch; the path is kept in densenet_metrics.json
+PatientSex empty or unreadable,0,4003,0.0,"kept in the predictions, grouped as 'unknown', excluded from the sex table's gap arithmetic"
+PatientAge empty or unreadable,0,4003,0.0,"same: an 'unknown' age band, never imputed by the cohort median"
+test images whose radiological class could not be joined,0,4003,0.0,"the label-source slice then reports one 'unavailable' group instead of guessing a class; the binary label itself never came from this file, so no prediction depends on it"
+duplicate image paths in the predicted set,0,4003,0.0,"would be a rows-vs-images leak; notebook 01 splits by patient, not by row"
+test images sharing a PatientID with another test image,0,4003,0.0,"allowed: a patient can contribute several films; splits are held apart by PatientID, which the cell above asserts"
