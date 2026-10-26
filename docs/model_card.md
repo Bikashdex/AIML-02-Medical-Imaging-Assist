@@ -43,6 +43,13 @@ validation only and then applied unchanged to the test split.
 | Accuracy | 0.8191 | 0.7967 |
 | Threshold used | 0.5108 | 0.5108 |
 
+Confusion matrix on the test split (n = 4,003, of which 902 are positive) at the same 0.5108 threshold:
+
+| | Predicted negative | Predicted positive |
+|---|---|---|
+| Actually negative (n = 3,101) | TN 2,498 | FP 603 |
+| Actually positive (n = 902) | FN 211 | TP 691 |
+
 Accuracy is reported but **is not the headline metric** — the class balance makes it misleading. AUROC, sensitivity
 and specificity are the numbers that matter for a screening aid.
 
@@ -57,7 +64,7 @@ train ones.
 | Constant predictor | 0.5000 | - | 77.47 % accuracy for a switch. The reason accuracy never leads a table |
 | Logistic regression on 1,024 pixels (32x32 downsample) | 0.7520 | **0.7400** | Course Day 10 baseline. Fits its own train subset at 0.9037 |
 | Logistic regression on 512 frozen ResNet-18 ImageNet features | 0.7234 | 0.7250 | Course Day 12 without the fine-tuning. Train AUROC 0.9999 on 1,200 samples |
-| DenseNet121, fine-tuned (this model) | `TODO` | `TODO` | **must beat 0.740 on test AUROC**, or transfer learning added nothing |
+| DenseNet121, fine-tuned (this model) | 0.8882 | **0.8819** | Beats the 0.740 bar by **+0.142** test AUROC. Early stopping picked epoch 4 of 8 (`results/densenet_metrics.json`) |
 
 The frozen-feature row scoring *below* the pixel row is a result, not a mistake. Pretrained ImageNet features are
 tuned for natural photographs; the value of transfer learning here appears only once the weights are fine-tuned.
@@ -73,8 +80,25 @@ features would not.
 
 ### Calibration
 
-`TODO` — a probability of 0.87 should mean roughly 87% of the time. Report a reliability diagram and say whether the
-model is over- or under-confident. Thresholds chosen on an uncalibrated score are fragile.
+A probability of 0.87 should mean roughly 87% of the time. It does not here. Measured by
+`tools/calibration_report.py` from `results/test_predictions_with_metadata.csv` (n = 4,003), with the reliability
+diagram in `results/plots/calibration.png` and the numbers in `results/calibration.json`.
+
+| Metric | Value |
+|---|---|
+| Prevalence on the test split | 0.2253 |
+| Mean predicted score | 0.3509 |
+| Brier score | 0.1323 |
+| Log loss | 0.4034 |
+| ECE (10 bins) | 0.1256 (95 % bootstrap CI 0.1147–0.1360) |
+| MCE (10 bins) | 0.3152 |
+
+The model is **over-confident**. Its average score is 0.351 against a true positive rate of 0.225, and the reliability
+curve sits above the diagonal across most bins. The cause is visible in training: BCE used `pos_weight = 3.4387` to
+offset the 77.5 / 22.5 class split, which inflates scores for the minority class. The 0.5108 threshold was chosen on
+this same uncalibrated scale, so it is a *ranking* cut-off, not a risk estimate. Recalibration would mean Platt
+scaling or isotonic regression fit on a held-out fold; that is not done here, and the model card says so instead of
+printing a sigmoid as a probability.
 
 ### Explainability — and its honest limits
 
@@ -84,25 +108,46 @@ Grad-CAM produces a ReLU'd activation map from the final dense block, upsampled 
 looks. A Grad-CAM map over the heart does not prove the model used the heart. It shows a region whose activations
 contributed to the class score. Say this in the viva; do not oversell the heatmap.
 
-`TODO` include the failure gallery: 2 correct, 2 wrong, 2 uncertain. The wrong ones are the interesting ones.
+The gallery is `results/plots/gradcam_gallery.png` (3 confident hits at p=0.99, 3 confident misses at
+p≤0.01, 2 false positives at p=0.97, 1 true negative at p=0.00) and `results/plots/gradcam_uncertain.png`
+(the two test cases inside threshold ±0.05: p=0.476 on a true opacity, p=0.523 on a negative). The misses
+are the useful panels: their heatmaps sit in the **image corners and collimation edges**, not on lung
+parenchyma, so the evidence the model used to call them negative was background, not anatomy.
+
+That reading is supported by a number, not just by eye: of the 300 sampled maps, **130 (43 %)** put less
+than half their energy inside the body, and the median in-body fraction is **0.484 for label-0 images
+against 0.707 for label-1 images** (`results/gradcam_focus.csv`, `gradcam.by_label` in
+`results/gradcam_fairness_summary.json`). The classifier's gradient is partly locked onto frame borders —
+consistent with the false-negative row above.
 
 ### Bias and subgroup performance
 
-| Slice | n (whole archive) | AUROC on the held-out test split | Gap vs overall |
-|---|---|---|---|
-| Sex = M | 15,166 | `TODO` | `TODO` |
-| Sex = F | 11,518 | `TODO` | `TODO` |
-| Age 0-39 | 9,044 | `TODO` | `TODO` |
-| Age 40-59 | 11,667 | `TODO` | `TODO` |
-| Age 60-79 | 5,731 | `TODO` | `TODO` |
-| Age 80+ | 242 | `TODO` | `TODO` |
-| Label source = `Normal` | 8,851 | `TODO` | `TODO` |
-| Label source = `No Lung Opacity / Not Normal` | 11,821 | `TODO` | `TODO` |
+| Slice | n (test split / whole archive) | AUROC on the held-out test split (95 % CI) | Gap vs overall (0.8819) | Sens / spec at 0.5108 |
+|---|---|---|---|---|
+| Sex = M | 2,299 / 15,166 | 0.8743 (0.8604–0.8902) | −0.0076 | 0.762 / 0.794 |
+| Sex = F | 1,704 / 11,518 | 0.8919 (0.8764–0.9083) | +0.0100 | 0.772 / 0.821 |
+| Age 0-39 | 1,332 / 9,044 | 0.8945 (0.8744–0.9113) | +0.0126 | 0.795 / 0.810 |
+| Age 40-59 | 1,708 / 11,667 | 0.8908 (0.8748–0.9083) | +0.0089 | 0.775 / 0.809 |
+| Age 60-79 | 924 / 5,731 | 0.8433 (0.8091–0.8724) | −0.0386 | 0.699 / 0.797 |
+| Age 80+ | 39 / 242 | 0.6855 (0.4530–0.9476) | −0.1964 | 0.625 / 0.710 |
+| Label source = `Normal` | 1,331 / 8,851 | n/a — no positives in this slice | n/a | spec 0.990 |
+| Label source = `No Lung Opacity / Not Normal` | 1,770 / 11,821 | n/a — no positives in this slice | n/a | spec 0.667 |
 
-The `n` column is the whole archive; the AUROCs come from the ~4,003-image test split only, so each row's actual
-sample is roughly one sixth of these counts and the bootstrap interval in `results/gradcam_fairness_summary.json`
-(one subgroup table per row, same band labels — `sex`, `age_band`, `class_source`, `sex_x_age`) is the number to read
-with the table. Fill this from `notebooks/04_gradcam_fairness.ipynb`, not by re-binning anything.
+Reading the table: sex is flat (0.018 AUROC gap, CIs overlap), so there is no measurable sex disparity here.
+The 60–79 dip (924 images, 176 positives) is the one age gap with enough support to take seriously.
+The 80+ number (39 images, 8 positives) has a CI spanning 0.45–0.95 and must not be quoted as evidence of a
+disparity — the widest `sex_x_age` gap (0.3291) is the same artefact, built from 17- and 22-image cells.
+The two label-source rows cannot have an AUROC because those slices contain **no positive labels at all**;
+what they measure is specificity, and the gap between them (0.990 vs 0.667) is the finding: the model is
+right almost always on truly-normal films but rejects a third of the "abnormal for another reason" films
+out of hand, i.e. it has partly learned *"not obviously normal"* rather than *"opacity"*. The source of every
+number is `fairness.*.table` in `results/gradcam_fairness_summary.json`.
+
+The split is 4,003 test images, so each row's test sample is roughly one sixth of the archive count. The
+subgroup tables are emitted once per band label (`sex`, `age_band`, `class_source`, `sex_x_age`) by
+`notebooks/04_gradcam_fairness.ipynb`; nothing here is re-binned by hand. The run's missing-data audit is
+clean on all six checks (`results/missing_data_audit.csv`): 0 of 4,003 test images lack a cached render, a
+`PatientSex`, a `PatientAge`, or a joined radiological class, and no `PatientID` crosses the split.
 
 Slice counts and the sex/age values come from the DICOM tags, recovered in `notebooks/01_eda.ipynb` §3 and written
 into `results/split_*.csv`. Observed label prevalence before any model is involved: 21.7 % female vs 23.1 % male,
@@ -146,12 +191,29 @@ acquisition. Neither is claimed as done.
 4. No 3D information — overlapping structures can hide findings a radiologist would resolve from two views.
 5. Label noise: bounding boxes came from 18 radiologists across 16 institutions.
 6. Demographic distribution mirrors one US dataset; transferability to the local population is untested.
-7. Confidence scores are not calibrated unless `TODO` says otherwise.
+7. Confidence scores are not calibrated — mean score 0.351 against 22.5 % prevalence, ECE 0.126 (see *Calibration*).
+   Read the 0.5108 cut-off as a ranking threshold, not as a risk estimate.
 
 ### Failure modes observed
 
-`TODO` — describe at least three concrete cases: what the image showed, what the model said, what Grad-CAM
-highlighted, and what you think the model actually keyed on.
+Three concrete cases, each a row of `results/test_predictions_with_metadata.csv` or a panel of the two galleries:
+
+1. **Confident false negative.** `3e9ff8ec-edfa-4435-a3ef-898b09b234bc`, a 25-year-old man labelled
+   `Lung Opacity`, scored **p = 0.0034** — the most confident miss in the test split. Its Grad-CAM panel in
+   `gradcam_gallery.png` puts the hot spot in a top corner of the frame, not on the lungs. The model was not
+   borderline about this film; it read background/clipping structure and concluded "no opacity". This is the
+   failure mode a screening deployment would actually suffer, because the miss arrives with high confidence.
+2. **Confident false positive on another abnormality.** `595786d9-b679-4722-90a8-bad34a40c350`, a 24-year-old
+   man whose radiological source is `No Lung Opacity / Not Normal`, scored **p = 0.968**. The heatmap spreads
+   across the chest rather than concentrating. Combined with the 0.667 specificity on that same slice, this is
+   the model reacting to "this chest is abnormal" instead of "this chest has an opacity".
+3. **The uncertain band.** `gradcam_uncertain.png` shows the two test cases closest to the cut-off: a true
+   opacity at **p = 0.476** (0.035 below 0.5108) and a negative at **p = 0.523** (0.012 above). Both heatmaps
+   spill off the body onto the frame. These are the cases a human-in-the-loop would wave through, and they are
+   why the viewer shows the score and the heatmap instead of a yes/no badge.
+
+Across all three the same underlying weakness shows up: part of the evidence is the frame, not the patient —
+43 % of sampled maps put less than half their energy inside the body.
 
 ### Intended deployment and guardrails as built
 
@@ -178,7 +240,7 @@ the model changes radiologist behaviour at all.
 | Output | Binary spleen mask |
 | Training data | MSD Task09_Spleen, 41 volumes |
 | Metric | Mean Dice, plus per-case Dice |
-| Inference | Sliding window, ROI 192³ |
+| Inference | Sliding window (0.5 overlap, Gaussian blend), ROI 128³ |
 
 | Metric | Value |
 |---|---|
@@ -201,7 +263,7 @@ the average. `TODO` include the per-case table.
 | DVC data revision | images `3fd56c2857f39d9f9df084ddadd7c8de.dir` (26,684 files, 3,555,311,924 B); same images as one archive `a8307fbc6d9138a7760dafde21383714` (3,534,067,864 B), which is the object `dvc push` transfers; `stage_2_train_labels.csv` `010a01a3f9a7cf76cb14704a95b22263`; `stage_2_detailed_class_info.csv` `c3bb15f6d279cfe39e09da8903902478`; derived header cache `dicom_headers.csv` `28b6ca9e1af3dde6e89e0cc3a755a3c9` |
 | DVC remote | `gdrive://1_MZ3txKpgRucQ5Ep8YxZAbKovIzDJFiL` (a private Drive folder named `aiml02-dvc-remote`). Two independent obstacles had to be cleared, both recorded in `README.md`: the plugin's shared OAuth client is refused by Google for the `drive` scope — fixed by registering a personal **Desktop app** client and enabling the Google Drive API on that project (a *Web application* client can never work, because pydrive2 redirects to `http://localhost:8080/`) — and pushing the image folder would mean 26,688 separate Drive uploads, fixed by pushing the archive instead. Only the archive and the three CSVs are pushed; the folder revision above stays as the per-image md5 provenance record. |
 | Seed | 7 |
-| Runtime | baselines L0-L2: this laptop, CPU only, torch 2.11.0+cpu, **executed**. L3 DenseNet121: **not executed yet** — `notebooks/03_train_densenet.ipynb` runs on a hosted GPU (Kaggle T4, or Colab T4 if the free quota returns) and records the real `host`/`device`/`torch`/`cuda` in `densenet_metrics.json`'s `runtime` block. A laptop CPU smoke run is written as `host: local` and is a code check, not a result |
+| Runtime | baselines L0-L2: this laptop, CPU only, torch 2.11.0+cpu. L3 DenseNet121: **executed on a Kaggle T4** on 2026-10-26 — torch 2.11.0+cu128, CUDA 12.8, python 3.13.15, recorded in `densenet_metrics.json`'s `runtime` block. Notebooks 04 and 05 ran on the same Kaggle T4. A laptop CPU smoke run is written as `host: local` and is a code check, not a result |
 | Package versions | `requirements.txt` |
 | Environment that produced the baseline numbers | `results/environment.json` — Python 3.13.1, torch 2.11.0+cpu, numpy 2.4.3, scikit-learn 1.9.1, pydicom 3.0.2 |
 | Reproduction status of the baselines | Ran twice end to end, every AUROC and PR-AUC identical to 4 decimal places, threshold reproduced at 0.163. Determinism holds *within* this environment; it is not claimed across environments, because the pinned `torch==2.4.1` / `numpy==1.26.4` cannot even install on 3.13 (no cp313 wheels) |
