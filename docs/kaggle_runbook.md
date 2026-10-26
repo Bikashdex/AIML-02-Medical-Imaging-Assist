@@ -31,6 +31,13 @@ Upload it once as a private dataset:
 2. From then on, attaching it to any notebook is one click (Add Input → Your
    Datasets). Alternatively drag the zip into Add Input → Upload per session.
 
+Kaggle **unzips** a zip uploaded to a dataset, so the attached input lands as a
+plain tree — `/kaggle/input/aiml02-code/{src,results,weights,...}` — and there is
+no `repo.zip` file to find. The code-cell of notebooks 03/04/05 handles both
+shapes: it uses `repo.zip` when one exists, otherwise it finds the marker file in
+`/kaggle/input` and copies the extracted tree into scratch (`/kaggle/input` is
+read-only, and the cells write results next to the code).
+
 ## 2. Session A — `03_train_densenet.ipynb`
 
 1. kaggle.com → **Code → New Notebook**.
