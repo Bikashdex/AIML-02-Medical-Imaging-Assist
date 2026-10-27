@@ -45,7 +45,10 @@ Required by the brief, and where each one is used:
 ├── docs/
 │   ├── architecture.md        system diagram + data flow + API contract
 │   ├── dataset_card.md        provenance, licence, label policy, splits
-│   └── model_card.md          limits, bias, intended use  ← required by the brief
+│   ├── model_card.md          limits, bias, intended use  ← required by the brief
+│   ├── demo_script.md         10-minute recording script: shot list, verified commands, narration
+│   ├── reflection.md          individual reflection (draft to personalise)
+│   └── presentation/          the 13-slide deck (aiml02-presentation/AIML-02-Medical-Imaging-Assist.pptx)
 ├── notebooks/                 01-02 run locally, 03-05 on Kaggle (also Colab; CPU-tested locally)
 ├── src/
 │   ├── data/                  DICOM I/O, patient-level splits, datasets
@@ -321,7 +324,7 @@ project's development machine has 8 GB RAM and no GPU, so nothing here should be
 | 3b | MONAI 3D U-Net | ✅ rerun on the **Kaggle T4** (2026-10-27, 90 epochs, 119.3 GPU-min, kernel version 8): **mean test Dice 0.8586** — median 0.9124, range 0.5972–0.9480 over the 6 held-out volumes, no zero-Dice cases, `n_below_0_5` = 0, best quick-val 0.9357 at epoch 79 (`results/spleen_metrics.json`, per-case table in `results/spleen_per_case.csv`, overlays in `results/plots/spleen_overlays.png`). The first 40-epoch run scored 0.329 because the sampler drew positives from a voxel inside the organ and negatives from the volume centre, teaching the net a blob near the middle of the window; jittered positive centres plus uniformly drawn negatives is the whole difference between 0.329 and 0.8586 |
 | 4 | FastAPI + Orthanc + audit log + Docker | 🟡 image built offline from `wheelhouse/` (2026-10-27, `aiml-02-medical-imaging-api:latest`, 2.09 GB) and the container serves `/health`, `/model-info` and `/predict` on port 8010: `positive.dcm` → **0.8685 opacity**, `negative.dcm` → **0.1826 no_opacity**, tags serialised, 2 tests in `tests/test_api.py` pass. Build fixes: `uvicorn[standard]` needs `uvloop`, which was not in the wheelhouse, so the `--no-index` install died — plain `uvicorn` is pinned instead, and both pip lines are offline. Still open: `orthancteam/orthanc` never pulled (build-proxy DNS and CDN timeouts), so the stack runs as `docker compose up -d --no-deps api`; ingest and the audit DB stay unwired |
 | 5 | React viewer | ✅ exercised 2026-10-27 against the running API in the in-app browser: `positive.png` rendered a card at **86.9 % opacity**, `negative.png` at **18.3 % no_opacity**, `positive.dcm` at **86.9 %** with its real tags (patient id, CR, 1024×1024), the education banners and the 60 % overlay slider rendered, the heatmap toggle stayed disabled with "(none from API yet)" because `/predict` returns no `overlay_url`, and Approve moved the study to `approved` (Reject shares the same handler but was not clicked). Verification is DOM-level — the in-app browser was hidden, so no screenshot exists |
-| 6 | Docs, tests, demo, presentation | 🟡 **78 tests pass locally**; dataset card, both halves of the model card and both runbooks carry measured numbers. Demo recording and the 10-minute presentation are outstanding |
+| 6 | Docs, tests, demo, presentation | 🟡 **78 tests pass locally**; dataset card, both halves of the model card and both runbooks carry measured numbers. **13-slide deck** in `docs/presentation/` follows the brief's narrative (two tracks → numbers → explainability → live service → the sampler bug → limits); **`docs/demo_script.md`** is a 10-minute shot list whose commands were re-run on 2026-10-27 against the local API (0.8685 / 0.1826 at threshold 0.5108, viewer proxying on 5173), with the Docker/Orthanc gap stated on camera; **`docs/reflection.md`** is a first-person draft marked for personalisation. Outstanding: the recording itself |
 
 ## Licence and data terms
 
