@@ -11,6 +11,7 @@ export default defineConfig({
       '/health': target,
       '/model-info': target,
       '/predict': target,
+      '/audit': target,
     },
   },
 })

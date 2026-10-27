@@ -10,6 +10,16 @@ export async function fetchModelInfo() {
   return r.json()
 }
 
+export async function postDecision(entry) {
+  const r = await fetch('/audit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  })
+  if (!r.ok) throw new Error(`audit failed (${r.status}): ${await r.text()}`)
+  return r.json()
+}
+
 export async function postPredict(file, studyUid) {
   const body = new FormData()
   body.append('file', file)

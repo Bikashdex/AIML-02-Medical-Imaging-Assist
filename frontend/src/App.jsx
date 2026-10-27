@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchHealth, fetchModelInfo, postPredict } from './api.js'
+import { fetchHealth, fetchModelInfo, postDecision, postPredict } from './api.js'
 import StudyList from './components/StudyList.jsx'
 import ImageViewer from './components/ImageViewer.jsx'
 import DecisionBar from './components/DecisionBar.jsx'
@@ -54,10 +54,28 @@ export default function App() {
     }
   }
 
-  function handleDecide(decision, reason) {
-    setStudies((prev) =>
-      prev.map((s) => (s.id === selectedId ? { ...s, decision, reason } : s)),
-    )
+  async function handleDecide(decision, reason) {
+    const study = studies.find((s) => s.id === selectedId)
+    if (!study) return
+    const id = study.id
+    setStudies((prev) => prev.map((s) => (s.id === id ? { ...s, decision, reason, auditState: 'saving' } : s)))
+    try {
+      const saved = await postDecision({
+        study_uid: study.result.study_uid,
+        decision,
+        reason: reason || null,
+        probability: study.result.probability,
+        threshold_used: study.result.threshold_used,
+        model_version: study.result.model_version,
+      })
+      setStudies((prev) =>
+        prev.map((s) =>
+          s.id === id ? { ...s, auditState: 'saved', auditId: saved.recorded.id, auditError: null } : s,
+        ),
+      )
+    } catch (e) {
+      setStudies((prev) => prev.map((s) => (s.id === id ? { ...s, auditState: 'error', auditError: e.message } : s)))
+    }
   }
 
   return (

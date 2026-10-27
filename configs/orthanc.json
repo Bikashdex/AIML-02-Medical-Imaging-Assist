@@ -7,7 +7,7 @@
   "HttpPort": 8042,
   "RemoteAccessAllowed": true,
   "ScriptingEnabled": false,
-  "StableAge": true,
+  "StableAge": 60,
 
   "AuthenticationEnabled": false,
 

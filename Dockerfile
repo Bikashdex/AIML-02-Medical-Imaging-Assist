@@ -27,7 +27,9 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse -r requiremen
 COPY src/ src/
 COPY configs/ configs/
 
-RUN useradd --create-home --uid 10001 appuser
+# /data backs the audit volume. It must exist and belong to appuser in the image: a fresh named volume inherits
+# the image directory's ownership, otherwise the volume is root:root and sqlite cannot create audit.db in it.
+RUN useradd --create-home --uid 10001 appuser && mkdir -p /data && chown -R appuser:appuser /data
 USER appuser
 
 EXPOSE 8000

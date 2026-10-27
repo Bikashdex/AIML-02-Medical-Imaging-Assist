@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from src.data.dicom_io import describe, read_study, to_rgb_uint8
 from src.data.transforms import make_transform
+from src.api import audit
 
 DISCLAIMER = "For education only. Not for clinical use."
 MODEL_PATH = os.getenv("MODEL_PATH", "artifacts/densenet121_lungopacity.pt")
@@ -83,6 +84,15 @@ class Prediction(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+class DecisionIn(BaseModel):
+    study_uid: str = Field(min_length=1)
+    decision: str = Field(pattern="^(approved|rejected)$")
+    reason: str | None = None
+    probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    threshold_used: float | None = None
+    model_version: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, object]:
     bundle = load_bundle()
@@ -104,6 +114,24 @@ def model_info() -> dict[str, object]:
         "split_policy": "grouped split on patient_id (one image per group in RSNA stage_2)",
         "disclaimer": DISCLAIMER,
     }
+
+
+@app.post("/audit", status_code=201)
+def record_decision(entry: DecisionIn) -> dict[str, object]:
+    row = audit.record(
+        study_uid=entry.study_uid,
+        decision=entry.decision,
+        reason=entry.reason,
+        probability=entry.probability,
+        threshold_used=entry.threshold_used,
+        model_version=entry.model_version,
+    )
+    return {"recorded": row, "disclaimer": DISCLAIMER}
+
+
+@app.get("/audit/{study_uid}")
+def decisions_for_study(study_uid: str) -> dict[str, object]:
+    return {"study_uid": study_uid, "decisions": audit.for_study(study_uid), "disclaimer": DISCLAIMER}
 
 
 @app.post("/predict", response_model=Prediction)

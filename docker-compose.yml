@@ -11,7 +11,8 @@ services:
       - ./configs/orthanc.json:/etc/orthanc/orthanc.json:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8042/system"]
+      # The orthanc image ships neither curl nor wget; python3 is the only probe available.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8042/system', timeout=4)"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -50,9 +51,15 @@ services:
     volumes:
       - ./artifacts:/models:ro
       - audit-data:/data
+    # The image's HEALTHCHECK probes uvicorn on :8000, which this container does not run — it would always be
+    # unhealthy. The poller's own liveness is its log line per batch.
+    healthcheck:
+      disable: true
     depends_on:
       api:
-        condition: service_started
+        # service_started is not enough: uvicorn binds the port only after the weights load, and the poller
+        # would burn its first study on a refused connection.
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

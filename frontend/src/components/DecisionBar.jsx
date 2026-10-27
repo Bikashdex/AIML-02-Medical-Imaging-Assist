@@ -35,7 +35,13 @@ export default function DecisionBar({ study, onDecide }) {
         )}
       </div>
       <p className="hint">
-        Decisions are kept in this session only until the audit endpoint is wired to audit.db.
+        {study.auditState === 'saved'
+          ? `Decision written to the audit log as row ${study.auditId}.`
+          : study.auditState === 'error'
+            ? `Not recorded: ${study.auditError}`
+            : study.auditState === 'saving'
+              ? 'Writing the decision to audit.db…'
+              : 'Approve or Reject writes a row to audit.db via POST /audit.'}
       </p>
     </div>
   )

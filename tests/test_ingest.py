@@ -1,9 +1,9 @@
 """The poller's half of the Orthanc chain, exercised against a stub that speaks Orthanc's REST shape.
 
-The real image (`orthancteam/orthanc`) has never pulled on this machine, so the server itself cannot be part of the
-test. Everything downstream of it can: a stub serves `/changes` and `/instances/{id}/file`, and the assertions below
-are about what the poller does with them — forward new instances, skip `Removed` ones, survive a fetch that fails,
-and advance the marker so a restart does not replay old studies.
+A stub serves `/changes` and `/instances/{id}/file` in both the legacy and the 1.12+ merged format, and the assertions
+below are about what the poller does with them — forward new instances, skip `Removed` ones, survive a fetch that
+fails, resolve a patient-level change down to its instances, score each instance once per run, and advance the marker
+so repeated polls do not replay the same batch.
 """
 
 from __future__ import annotations
@@ -43,15 +43,31 @@ def _make_handler(state: _Stub):
             if self.path.startswith("/changes"):
                 last = int(self.path.split("last=")[1])
                 state.changes_calls.append(last)
-                payload = {
-                    "Last": 7,
-                    "Instances": [
-                        {"ID": "good"},
-                        {"ID": "deleted", "Removed": True},
-                        {"ID": "bad"},
-                    ],
-                }
+                if last >= 20:  # carry an Orthanc 1.12+ feed, which merges child changes into the patient
+                    payload = {
+                        "First": 21,
+                        "Last": 21,
+                        "Changes": [
+                            {"ChangeType": "StablePatient", "ResourceType": "Patient", "ID": "p1", "Seq": 21},
+                            {"ChangeType": "RemovedInstance", "ResourceType": "Instance", "ID": "deleted", "Seq": 19},
+                        ],
+                    }
+                else:
+                    payload = {
+                        "Last": 7,
+                        "Instances": [
+                            {"ID": "good"},
+                            {"ID": "deleted", "Removed": True},
+                            {"ID": "bad"},
+                        ],
+                    }
                 self._send(200, json.dumps(payload).encode(), "application/json")
+                return
+            if self.path == "/patients/p1/studies":
+                self._send(200, json.dumps([{"ID": "s1", "Type": "Study"}]).encode(), "application/json")
+                return
+            if self.path == "/studies/s1/instances":
+                self._send(200, json.dumps([{"ID": "good", "Type": "Instance"}]).encode(), "application/json")
                 return
             if self.path.startswith("/instances/"):
                 instance_id = self.path.split("/")[2]
@@ -108,7 +124,7 @@ def test_poll_once_forwards_new_instances_and_skips_removed(stub, monkeypatch):
     with httpx.Client() as client:
         last = orthanc_poller.poll_once(client, 0)
 
-    assert last == 7, "the marker must advance or a restart replays every study"
+    assert last == 7, "the marker must advance or the next poll replays the same batch"
     assert state.changes_calls == [0]
     assert state.paths == [
         "/changes?last=0",
@@ -129,6 +145,25 @@ def test_poll_once_uses_the_marker_it_was_given(stub, monkeypatch):
         orthanc_poller.poll_once(client, 7)
 
     assert state.changes_calls == [7]
+
+
+def test_poll_once_resolves_merged_patient_changes_once(stub, monkeypatch):
+    """Orthanc 1.12+ reports a new image as a patient change; the poller must walk down to the instance."""
+    state, base = stub
+    monkeypatch.setattr(orthanc_poller, "ORTHANC_URL", base)
+    monkeypatch.setattr(orthanc_poller, "API_URL", base)
+
+    with httpx.Client() as client:
+        seen: set[str] = set()
+        last = orthanc_poller.poll_once(client, 20, seen)
+        orthanc_poller.poll_once(client, last, seen)  # the feed still lists the same patient
+
+    assert last == 21
+    assert "/patients/p1/studies" in state.paths
+    assert "/studies/s1/instances" in state.paths
+    assert "/instances/deleted/file" not in state.paths, "a removed instance must not be fetched"
+    assert len(state.predicts) == 1, "a re-listed patient must not re-score instances already seen"
+    assert b"GOOD-DICOM" in state.predicts[0]
 
 
 def test_poll_once_lets_an_unreachable_server_raise(stub, monkeypatch):
