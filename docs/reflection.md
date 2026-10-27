@@ -25,7 +25,7 @@ barely above the pixel baseline. Fine-tuning did the work, not the backbone.
 
 **The system around them.** A FastAPI service with `/health`, `/model-info` and `/predict`; a React viewer showing the
 scan, the probability and an Approve/Reject decision; a Grad-CAM path; an Orthanc ingest poller and a SQLite audit
-trail. 78 tests pass.
+trail. 83 tests pass.
 
 ## The four things that actually taught me something
 

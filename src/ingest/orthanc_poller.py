@@ -16,7 +16,10 @@ if os.getenv("ORTHANC_USERNAME"):
 
 
 def fetch_dcm(client: httpx.Client, instance_id: str) -> bytes:
-    return client.get(f"{ORTHANC_URL}/instances/{instance_id}/file", auth=AUTH).content
+    response = client.get(f"{ORTHANC_URL}/instances/{instance_id}/file", auth=AUTH)
+    # Without this a failed fetch returns Orthanc's error page as the "study" and the API scores it.
+    response.raise_for_status()
+    return response.content
 
 
 def send_to_api(client: httpx.Client, instance_id: str, payload: bytes) -> dict | None:
@@ -33,30 +36,38 @@ def send_to_api(client: httpx.Client, instance_id: str, payload: bytes) -> dict 
         return None
 
 
+def poll_once(client: httpx.Client, last: int) -> int:
+    """Handle one /changes batch and return the marker to resume from."""
+    changes = client.get(f"{ORTHANC_URL}/changes", params={"last": last}, auth=AUTH).json()
+    last = changes.get("Last", last)
+    for instance in changes.get("Instances", []):
+        if instance.get("Removed"):
+            continue
+        instance_id = instance["ID"]
+        try:
+            payload = fetch_dcm(client, instance_id)
+        except httpx.HTTPError as exc:
+            print(f"[ingest] {instance_id} -> fetch error: {exc}", flush=True)
+            continue
+        result = send_to_api(client, instance_id, payload)
+        if result:
+            print(
+                f"[ingest] {instance_id} -> {result['prediction']} "
+                f"p={result['probability']:.3f} ({result['inference_ms']}ms)",
+                flush=True,
+            )
+    return last
+
+
 def main() -> None:
     print(f"[ingest] watching {ORTHANC_URL} every {POLL_SECONDS:.0f}s", flush=True)
     last = 0
     with httpx.Client() as client:
         while True:
             try:
-                changes = client.get(f"{ORTHANC_URL}/changes", params={"last": last}, auth=AUTH).json()
+                last = poll_once(client, last)
             except httpx.HTTPError as exc:
                 print(f"[ingest] Orthanc unreachable: {exc}", flush=True)
-                time.sleep(POLL_SECONDS)
-                continue
-
-            last = changes.get("Last", last)
-            for instance in changes.get("Instances", []):
-                if instance.get("Removed"):
-                    continue
-                instance_id = instance["ID"]
-                result = send_to_api(client, instance_id, fetch_dcm(client, instance_id))
-                if result:
-                    print(
-                        f"[ingest] {instance_id} -> {result['prediction']} "
-                        f"p={result['probability']:.3f} ({result['inference_ms']}ms)",
-                        flush=True,
-                    )
             time.sleep(POLL_SECONDS)
 
 

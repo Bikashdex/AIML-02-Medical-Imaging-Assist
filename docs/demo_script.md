@@ -26,38 +26,57 @@ number that is not in `results/`. The disclosure lines in shots 8 and 9 exist fo
 | Repo updated | `git pull`; confirm `artifacts/densenet121_lungopacity.pt` exists (28,401,697 B) |
 | Sample files exist | `dir data\raw\rsna\stage_2_train_images\019d950b-*.dcm` and `000924cf-*.dcm` — two real RSNA studies used below |
 | Venv | `C:\Users\kumar\venvs\aiml02-py312\Scripts\activate` (Python 3.12, torch 2.14.1+cpu) |
-| API boot time | ~10 s (imports torch); start terminal 1 **before** recording the first shot |
-| Viewer boot | ~11 s; start terminal 2 early too, then switch to it |
+| API boot time | ~10 s (container already running; check first) |
+| Viewer boot | 10–35 s on this laptop; start terminal B early, then switch to it |
+| Container | `docker ps` shows `aiml02-api` **healthy** on `0.0.0.0:8010->8000/tcp` |
 
 Three windows, in this order:
 
-1. **Terminal A** — API, port **8011** (8000 is busy on this machine).
-2. **Terminal B** — viewer, port **5173**, proxying to 8011.
+1. **Terminal A** — the API container, port **8010** (`API_PORT=8010`).
+2. **Terminal B** — viewer, port **5173**, proxying to 8010.
 3. **Browser** — `http://localhost:5173` (use `localhost`, not `127.0.0.1`; Vite binds to the IPv6 loopback).
 4. **Slides** — `aiml02-presentation/AIML-02-Medical-Imaging-Assist.pptx`, 13 slides, presenter view on.
 
-> **Docker is not part of this recording.** The Docker Desktop engine on this machine will not start (named pipe
-> missing, engine `_ping` returns HTTP 503) so `orthancteam/orthanc` was never pulled. Running the API straight from
-> the venv is the honest path and produces identical predictions — same code, same weights, same transform. Say that
-> in shot 8 if the reviewer's checklist mentions Docker; the image itself was built and is real (2.09 GB,
-> `aiml-02-medical-imaging-api:latest`).
+> **Docker is part of the recording, with one gap.** The engine is back and the API container (`aiml02-api`, 2.09 GB,
+> built offline from `wheelhouse/`) is healthy on **8010**. What is still missing is `orthancteam/orthanc`: nine pulls
+> have stalled at "Pulling fs layer" and never completed a single layer, so the stack runs as
+> `docker compose up -d --no-deps api` and there is no C-STORE → ingest → audit path to show. Say that in shot 8; do
+> not imply the Orthanc box exists.
+>
+> **Latency you will see on camera:** the container answers a study in **7–14 s** on this laptop (4 vCPU, 2 torch
+> threads inside Docker Desktop's VM). The same code and weights in the host venv answer in **0.42 s**. Record with the
+> container — it is the deployable artefact — and use the wait to talk. The venv fallback at the end of this section
+> keeps the recording honest if the container misbehaves.
 
-Start the two servers now:
+Start the stack:
 
 **Terminal A**
+```bat
+cd C:\Users\kumar\Documents\Qoder\2026-10-22\410be6bc\AIML-02-medical-imaging
+set API_PORT=8010
+docker compose up -d --no-deps api
+docker ps --format "{{.Names}}  {{.Status}}  {{.Ports}}"
+curl -s http://localhost:8010/health
+```
+
+Expected: `aiml02-api  Up About an hour (healthy)  0.0.0.0:8010->8000/tcp` and
+`{"status":"ok","model_loaded":true,"device":"cpu", ...}`.
+
+**Terminal B**
+```bat
+cd C:\Users\kumar\Documents\Qoder\2026-10-22\410be6bc\AIML-02-medical-imaging\frontend
+set VITE_API_TARGET=http://localhost:8010
+npm run dev
+```
+
+**Fallback if the container will not start** — same predictions, 0.4 s per study, no Docker:
+
 ```bat
 cd C:\Users\kumar\Documents\Qoder\2026-10-22\410be6bc\AIML-02-medical-imaging
 C:\Users\kumar\venvs\aiml02-py312\Scripts\activate
 set MODEL_PATH=artifacts\densenet121_lungopacity.pt
 set MODEL_VERSION=demo-2026-10-27
 python -m uvicorn src.api.main:app --port 8011
-```
-
-**Terminal B**
-```bat
-cd C:\Users\kumar\Documents\Qoder\2026-10-22\410be6bc\AIML-02-medical-imaging\frontend
-set VITE_API_TARGET=http://localhost:8011
-npm run dev
 ```
 
 ---
@@ -119,7 +138,7 @@ Point at slide 3's fact table: RSNA 26,684 DICOM files versus MSD 41 CT volumes,
 **Type (or paste) in Terminal A — a second window, API already running:**
 
 ```bat
-curl -s http://localhost:8011/health
+curl -s http://localhost:8010/health
 ```
 
 Real output:
@@ -132,13 +151,13 @@ Real output:
 > And model-info states the label semantics in the API itself, so a client cannot misuse it by accident."
 
 ```bat
-curl -s http://localhost:8011/model-info
+curl -s http://localhost:8010/model-info
 ```
 
 Real output:
 
 ```
-{"model":"densenet121","version":"demo-2026-10-27","task":"binary lung-opacity detection on chest X-ray",
+{"model":"densenet121","version":"unversioned","task":"binary lung-opacity detection on chest X-ray",
  "label_semantics":"1 = lung opacity present; 0 = normal OR another abnormality",
  "split_policy":"grouped split on patient_id (one image per group in RSNA stage_2)",
  "disclaimer":"For education only. Not for clinical use."}
@@ -147,31 +166,32 @@ Real output:
 **Now the prediction — a study the model has never seen, straight from the held-out split:**
 
 ```bat
-curl -s -F "file=@data/raw/rsna/stage_2_train_images/019d950b-dd38-4cf3-a686-527a75728be6.dcm" http://localhost:8011/predict
+curl -s -F "file=@data/raw/rsna/stage_2_train_images/019d950b-dd38-4cf3-a686-527a75728be6.dcm" http://localhost:8010/predict
 ```
 
-Real output (trimmed to the fields that matter):
+Real output from the container (trimmed to the fields that matter) — it arrives after 7–14 s:
 
 ```
 "prediction":"opacity","probability":0.8685,"threshold_used":0.5107557773590088,
-"model_version":"demo-2026-10-27","inference_ms":417.3,
+"model_version":"unversioned","inference_ms":7135.5,
 "dicom_tags":{"patient_id":"019d950b-dd38-4cf3-a686-527a75728be6","modality":"CR","rows":1024,"columns":1024, ...}
 ```
 
 > "0.8685 against a threshold of 0.5108 — opacity. The response carries the DICOM tags back, the model version, and
-> the threshold that was actually used, so a decision can be reconstructed later. That 400 milliseconds is CPU — the
-> container on a GPU host is faster, though I have no measured number for that, so I will not quote one."
+> the threshold that was actually used, so a decision can be reconstructed later. Seven seconds is what CPU inference
+> costs inside Docker Desktop's VM on a four-core laptop; the same weights from the host's Python are half a second,
+> so the gap is the VM, not the model."
 
 **The negative:**
 
 ```bat
-curl -s -F "file=@data/raw/rsna/stage_2_train_images/000924cf-0f8d-42bd-9158-1af53881a557.dcm" http://localhost:8011/predict
+curl -s -F "file=@data/raw/rsna/stage_2_train_images/000924cf-0f8d-42bd-9158-1af53881a557.dcm" http://localhost:8010/predict
 ```
 
 Real output:
 
 ```
-"prediction":"no_opacity","probability":0.1826,"threshold_used":0.5107557773590088,"inference_ms":479.1, ...
+"prediction":"no_opacity","probability":0.1826,"threshold_used":0.5107557773590088,"inference_ms":9380.5, ...
 ```
 
 > "Same endpoint, same threshold, 0.1826 — no opacity. The threshold is not something I tuned per demo: it comes out
@@ -179,28 +199,39 @@ Real output:
 
 ### Shot 6 — 6:30–7:30 · The viewer (browser)
 
-Switch to `http://localhost:5173`.
+Switch to `http://localhost:5173`. **Upload in this order — the PNGs first**: a `.dcm` upload gets a card and its tags,
+but the browser cannot draw the DICOM pixels, so that panel reads "Browser preview not available". The PNG path is what
+shows the actual radiograph.
 
-> "This is the radiologist-facing part. Upload a DICOM, and the viewer calls the same endpoint through a dev proxy, so
+```
+%TEMP%\aiml02_test\positive.png     -> image + "opacity - 86.9%"
+%TEMP%\aiml02_test\negative.png     -> image + "no_opacity - 18.3%"
+%TEMP%\aiml02_test\positive.dcm     -> tags + Approve
+```
+
+> "This is the radiologist-facing part. Upload a study, and the viewer calls the same endpoint through a dev proxy, so
 > what you see here is the service, not a mocked response."
 
-Upload `000924cf-…dcm`, point at the fields as they render:
+Upload `positive.png`:
 
-> "A card at 18.3 percent — no opacity. The education banner is on screen permanently: 'For education only, not for
-> clinical use.' The 60 percent overlay slider and the heatmap toggle are there for the Grad-CAM images."
+> "86.9 percent, opacity. The education banner is on screen permanently — 'For education only, not for clinical use' —
+> and the 60 percent overlay slider is where a Grad-CAM heatmap would fade in."
 
-Upload `019d950b-…dcm`:
+Upload `negative.png`:
 
-> "And here 86.9 percent, opacity, with the real tags from the file — patient ID, CR, 1024 by 1024.
+> "18.3 percent, no opacity. Two studies in the list now, each with its own decision state."
+
+Upload `positive.dcm`, then click **Approve**:
+
+> "Same study as a DICOM: 86.9 percent with the real tags read out of the file — patient ID, CR, 1024 by 1024. This
+> one shows tags instead of pixels, because the viewer does not decode DICOM, and I would rather show that than hide it.
 >
-> The heatmap toggle stays disabled, and it says why: '(none from API yet)'. The API returns a probability, not a
-> Grad-CAM overlay. I would rather ship a disabled control with an honest label than a toggle that does nothing."
-
-Click **Approve**:
-
-> "Approve moves the study to 'approved'. That decision is the audit event — the thing a regulated version of this
-> would have to be able to replay. Reject shares the same handler; I am not clicking it here to keep the recording
-> short."
+> The heatmap toggle stays disabled and says why: '(none from API yet)'. The API returns a probability, not a Grad-CAM
+> overlay. A disabled control with an honest label beats a toggle that does nothing.
+>
+> Approve moves the study to 'approved'. Note the line underneath: decisions live in this session only until the audit
+> endpoint is wired to `audit.db` — that is the row still red in my README. Reject shares the same handler; I am not
+> clicking it here to keep the recording short."
 
 ### Shot 7 — 7:30–8:30 · Track B and the bug (slides 8–9)
 
@@ -267,12 +298,12 @@ If you run long, cut shot 4 to the label-semantics paragraph only. Never cut sho
 
 | Problem | What to do |
 |---|---|
-| `Address already in use` on 8011 | `netstat -ano \| findstr :8011`, `taskkill /PID <pid> /F`, restart Terminal A |
+| `Address already in use` on 8010 | `netstat -ano \| findstr :8010`; usually the old container — `docker compose down` then up again |
 | `Address already in use` on 5173 | A leftover Vite is running; open `http://localhost:5173` anyway — if it loads, keep going |
-| Browser cannot reach the API | Use `localhost`, not `127.0.0.1`; Vite binds IPv6. Check `set VITE_API_TARGET=http://localhost:8011` in Terminal B |
-| `/predict` returns 503 `no model at …` | `MODEL_PATH` is relative — the shell must be in the repo root, not `frontend/` |
-| First request takes 3–5 s | That is the checkpoint load on the first call; wait, do not re-record |
-| Docker question from a reviewer | "The engine does not start on this machine — 503 on `_ping`. The image is built and served the predictions you just saw; the compose stack is recorded as incomplete in the README." |
+| Browser cannot reach the API | Use `localhost`, not `127.0.0.1`; Vite binds IPv6. Check `set VITE_API_TARGET=http://localhost:8010` in Terminal B |
+| `/predict` returns 503 `no model at …` | (venv fallback only) `MODEL_PATH` is relative — the shell must be in the repo root, not `frontend/` |
+| First request takes longer than 14 s | The machine is loaded (a docker pull, a Vite boot). Wait it out; if it passes 60 s, restart the container |
+| Docker question from a reviewer | "The API runs in its own image; Orthanc never pulled — nine attempts stalled at the first layer — so the stack is `--no-deps api` and ingest is unwired. That is row 4 in the README, still yellow." |
 
 ## Facts you may not improvise
 
