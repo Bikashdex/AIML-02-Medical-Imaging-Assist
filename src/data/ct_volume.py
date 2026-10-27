@@ -176,7 +176,9 @@ def sample_patch(x: np.ndarray, y: np.ndarray, roi: Sequence[int] = ROI, foregro
 
     * A spleen is a few percent of an abdominal CT. Cropping uniformly at random gives mostly empty patches,
       and a Dice/CE loss on empty patches drives the model to predict nothing. `foreground_ratio` of the
-      crops are centred on a labelled voxel instead.
+      crops are centred on a *jittered* labelled voxel instead: jittered so the organ is not always in the
+      middle of the window, and the remaining crops are drawn uniformly from the whole volume so the
+      negatives are every organ and not just the one behind the volume centre.
     * A crop that falls off the edge is zero-padded, and the label is padded with 0, which is background.
       Without the `padded` flag in the record, an evaluation would score those synthetic background voxels
       as if they were real anatomy and inflate Dice.
@@ -195,10 +197,17 @@ def sample_patch(x: np.ndarray, y: np.ndarray, roi: Sequence[int] = ROI, foregro
     centre: Sequence[int] | None = None
     fg_voxels = np.argwhere(y > 0.5)
     if len(fg_voxels) and rng.random() < foreground_ratio:
-        centre = rng.choice(fg_voxels).tolist()
+        # The jitter is load-bearing, not decoration. Centred exactly on an organ voxel, every positive crop
+        # in the epoch has the spleen within a few voxels of the window centre, and a net is free to learn
+        # "spleen = blob near the middle of whatever I am shown" - which scores 0.87 on a centred crop and
+        # 0.33 on the whole volume, where most windows are a *shifted* organ it was never asked to locate.
+        jitter = rng.integers(-(np.asarray(roi) // 4), np.asarray(roi) // 4 + 1, size=len(roi))
+        centre = (np.asarray(rng.choice(fg_voxels)) + jitter).clip(0, np.asarray(x.shape) - 1).tolist()
         on_foreground = True
     else:
-        centre = [int(s / 2) for s in x.shape]
+        # Uniform, not the volume centre: centring every negative on the middle of the abdomen handed the
+        # model one background (liver/stomach) per case and left every kidney free to be called a spleen.
+        centre = [int(rng.integers(0, s)) for s in x.shape]
         on_foreground = False
 
     starts, padded = [], False

@@ -72,7 +72,13 @@ export default function App() {
             </span>
           )}
           {!apiError && !health && <span className="badge">connecting…</span>}
-          {modelInfo && <span className="badge">v{modelInfo.version}</span>}
+          {/* "vunversioned" is not a version string: the API reports the literal "unversioned" until
+              MODEL_VERSION is set. */}
+          {modelInfo && (
+            <span className="badge">
+              {modelInfo.version === 'unversioned' ? 'unversioned' : `v${modelInfo.version}`}
+            </span>
+          )}
         </div>
       </header>
 

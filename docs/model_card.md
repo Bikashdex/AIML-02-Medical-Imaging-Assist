@@ -258,29 +258,28 @@ the model changes radiologist behaviour at all.
 | Training data | MSD Task09_Spleen, 41 volumes — 28 train / 7 val / 6 test, seed 7, patient-safe by construction |
 | Metric | Mean Dice, plus per-case Dice |
 | Inference | Sliding window (0.5 overlap, Gaussian blend), ROI 128³ |
-| Status | **Not measured on a hosted GPU.** The only executed copy on disk is a local CPU smoke test — see below |
+| Status | **Run once on a Kaggle T4 (2026-10-26, 50.4 GPU-min) but the number is not a performance claim** — a sampler bug invalidates it, see below |
 
 | Metric | Value |
 |---|---|
-| Mean Dice (val) | not measured — no hosted run has completed |
-| Mean Dice (test) | not measured |
-| Worst-case Dice | not measured |
-| Median inference time / volume | not measured |
+| Mean Dice (val) | 0.397 at epoch 39 (quick val, 3 cases); best 0.410 at epoch 19 |
+| Mean Dice (test) | 0.329 — median 0.370, range 0.058–0.440, n = 6 |
+| Worst-case Dice | 0.058 (`spleen_24`) |
+| Median inference time / volume | not recorded; the sliding-window pass over the 6 test volumes took 1.8 min wall clock |
 
-**Why this table is empty, stated plainly.** `notebooks/_smoke/executed_05_segment_spleen.ipynb` *is* executed, but
-it is a code-path check, not a result: its host block says `run_on: local`, `device: cpu`, and the smoke override
-ran **1 epoch / 2 optimizer steps with a 64³ ROI over 2 test cases**. It scored mean Dice **0.0142** (`spleen_10`
-0.0109, `spleen_21` 0.0175), predicting ~3,300 ml where the references are 71 and 111 ml. That is exactly what one
-step of training should produce, and it must not be quoted as segmentation performance — the repo's own rule
-(§5 of the runbook) is that a `host: local` run is a code check and never a result.
+**Why 0.329 is not the model's performance.** The run (`epochs_total = 40`, 128 patches/epoch, batch 2, 128³
+ROI) completed and wrote `spleen_metrics.json`, but every prediction is 4–5× too large — 917–1,777 ml against
+references of 55–361 ml — with centroids 114–160 mm from the reference. The sampler built each positive crop
+from a voxel *inside* the organ and each negative crop from the volume centre, so the net learned a fixed blob
+near the middle of the window rather than the organ: the same checkpoint scored 0.87 Dice on a hand-picked 128³
+crop that contains the spleen. `sample_patch` now jitters the positive centre by up to a quarter of the ROI and
+draws negatives uniformly over the volume, and the schedule is 90 epochs. **The rerun has not been pushed yet;
+until its `spleen_metrics.json` lands, Track B has no quotable Dice number.** The target for this dataset is
+0.80–0.90, which MONAI's own spleen tutorial reaches.
 
-The Kaggle T4 attempt (kernel `bikash24795/aiml-02-notebook-05-monai-spleen-segmentation`, version 3) failed on
-training step 1: 192³ crops at batch 2 allocated 14.28 GiB of the 14.56 GiB card and died inside `DiceCELoss`. The
-committed fix moves to **128³** (the patch size MONAI's own spleen tutorial uses), sets
-`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, and caches the 28 training volumes in RAM; it was pushed as
-version 4. Version 4's terminal status could not be confirmed, because the local Kaggle CLI is unavailable
-(see the runbook) and the remaining GPU budget was not to be spent on speculative checks. **Until that run's
-`spleen_metrics.json` is pulled, Track B has no reportable Dice number.**
+For the record, `notebooks/_smoke/executed_05_segment_spleen.ipynb` is only a code-path check (`run_on: local`,
+`device: cpu`, 1 epoch / 2 optimizer steps, Dice 0.0142); by the repo's rule (§5 of the runbook) a local run is
+never a result.
 
 **Limits:** trained on 41 volumes from a single collection. Small spleens, post-surgical anatomy, and unusual
 contrast timing are underrepresented. A low-Dice tail matters more than the mean — when the hosted run lands,

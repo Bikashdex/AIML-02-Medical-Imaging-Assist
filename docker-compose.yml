@@ -20,9 +20,9 @@ services:
     build: .
     container_name: aiml02-api
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"   # host port is settable: 8000 is a busy number
     environment:
-      MODEL_PATH: /models/classifier.pt
+      MODEL_PATH: /models/densenet121_lungopacity.pt
       UNET_PATH: /models/unet3d.pt
       AUDIT_DB_URL: sqlite:////data/audit.db
       ORTHANC_URL: http://orthanc:8042
@@ -42,7 +42,7 @@ services:
     container_name: aiml02-ingest
     command: ["python", "-m", "src.ingest.orthanc_poller"]
     environment:
-      MODEL_PATH: /models/classifier.pt
+      MODEL_PATH: /models/densenet121_lungopacity.pt
       AUDIT_DB_URL: sqlite:////data/audit.db
       ORTHANC_URL: http://orthanc:8042
       API_URL: http://api:8000

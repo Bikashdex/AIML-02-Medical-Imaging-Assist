@@ -11,8 +11,18 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libgdcm-tools curl \
  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-api.txt .
+# Wheelhouse first (tools/fetch_api_wheels.py fills it). Docker Desktop's build proxy crawled at 16 kB/s
+# on the 195 MB torch CPU wheel versus 3 MB/s from the host. torch is installed from the wheelhouse with
+# --no-index on its own line: as long as an index is reachable, pip prefers the index copy of the same
+# version and re-downloads those 195 MB over the proxy, which is exactly what this avoids.
+COPY wheelhouse/ /wheelhouse/
+# Both installs are --no-index. With an index reachable, pip asks it about every requirement before
+# falling back to --find-links, and DNS inside the build container is unreliable: a ~30 s offline install
+# became 20 min of "Failed to establish a new connection ... fastapi" retries. torch gets its own layer
+# so that a requirements change does not pay the 195 MB wheel install again.
+RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse torch==2.4.1 torchvision==0.19.1
+RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse -r requirements-api.txt
 
 COPY src/ src/
 COPY configs/ configs/

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -12,9 +13,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from src.data.dicom_io import describe, read_study, to_rgb_uint8
+from src.data.transforms import make_transform
 
 DISCLAIMER = "For education only. Not for clinical use."
-MODEL_PATH = os.getenv("MODEL_PATH", "artifacts/classifier.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "artifacts/densenet121_lungopacity.pt")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "unversioned")
 
 app = FastAPI(
@@ -35,9 +37,39 @@ def load_bundle() -> dict[str, object] | None:
         return None
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = checkpoint["model"].to(device).eval()
-    _bundle = {"model": model, "threshold": float(checkpoint.get("threshold", 0.5)), "device": device}
+
+    if "model" in checkpoint:            # a pickled module, as old exports wrote it
+        model = checkpoint["model"]
+        size = 224
+    else:                                # the graded artefact notebook 03 writes: weights + config
+        from src.models.classifier import build_densenet121
+
+        model = build_densenet121(num_classes=1, pretrained=False)
+        model.load_state_dict(checkpoint["state_dict"])
+        size = int(checkpoint.get("config", {}).get("train_size", 224))
+
+    # The API must see exactly what training saw. Passing raw pixels to a model trained on
+    # resize-235 -> center-crop-224 -> ImageNet normalisation returns confident nonsense.
+    _bundle = {
+        "model": model.to(device).eval(),
+        "threshold": float(checkpoint.get("threshold", 0.5)),
+        "device": device,
+        "transform": make_transform(size, train=False),
+        "epoch": checkpoint.get("epoch"),
+        "input_size": size,
+    }
     return _bundle
+
+
+def _jsonable(value: object) -> object:
+    """pydicom returns MultiValue for tags like PixelSpacing; JSON needs plain lists."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "__iter__"):
+        return [_jsonable(item) for item in value]
+    return str(value)
 
 
 class Prediction(BaseModel):
@@ -84,8 +116,10 @@ async def predict(file: UploadFile = File(...), study_uid: str | None = None) ->
     if not raw:
         raise HTTPException(status_code=400, detail="empty upload")
 
-    tmp = Path("/tmp") / (file.filename or "study.dcm")
-    tmp.write_bytes(raw)
+    with tempfile.NamedTemporaryFile(suffix=Path(file.filename or "study.dcm").suffix or ".dcm",
+                                     delete=False) as handle:
+        handle.write(raw)
+        tmp = Path(handle.name)
 
     tags: dict[str, object] | None = None
     uid = study_uid or (file.filename or "unknown")
@@ -100,9 +134,11 @@ async def predict(file: UploadFile = File(...), study_uid: str | None = None) ->
 
         with Image.open(BytesIO(raw)) as img:
             array = np.asarray(img.convert("RGB"))
+    finally:
+        tmp.unlink(missing_ok=True)
 
-    tensor = torch.from_numpy(array).permute(2, 0, 1).float().div(255.0)
-    tensor = tensor.unsqueeze(0).to(bundle["device"])  # type: ignore[union-attr]
+    transform = bundle["transform"]
+    tensor = transform(array).unsqueeze(0).to(bundle["device"])  # type: ignore[operator,union-attr]
 
     started = time.perf_counter()
     with torch.no_grad():
@@ -118,5 +154,5 @@ async def predict(file: UploadFile = File(...), study_uid: str | None = None) ->
         threshold_used=threshold,
         model_version=MODEL_VERSION,
         inference_ms=round(elapsed_ms, 2),
-        dicom_tags=tags,
+        dicom_tags=None if tags is None else {key: _jsonable(value) for key, value in tags.items()},
     )

@@ -31,6 +31,10 @@ artifacts/*
 *.onnx
 *.joblib
 
+# --- pre-downloaded linux wheels for the API image (tools/fetch_api_wheels.py stages them) ---
+wheelhouse/*.whl
+!wheelhouse/.gitkeep
+
 # --- python ---
 __pycache__/
 *.py[cod]

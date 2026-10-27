@@ -158,6 +158,30 @@ Two things were learned by running it on 2026-10-26, and the notebook now carrie
   334×334×181 float32 + mask), because loading one volume takes seconds and cropping it
   does not.
 
-The budget run is `epochs_total = 40` at 64 steps/epoch; the full schedule is 100–200
-epochs, and `spleen_metrics.json` records the config so a 40-epoch number is never quoted
+The budget run is `epochs_total = 90` at 64 steps/epoch; the full schedule is 100–200
+epochs, and `spleen_metrics.json` records the config so a 90-epoch number is never quoted
 as a longer one.
+
+### 6.1 The 40-epoch run scored 0.329 Dice — and the bug was the sampler, not the GPU
+
+The 2026-10-26 T4 run finished green in 50 GPU-minutes and reported mean test Dice **0.329**
+(predicted volumes 737–1,777 ml against 55–361 ml of reference: 7–20× over-segmentation,
+centroids 114–160 mm away). Three local checks, in this order, located it:
+
+1. **A 128³ crop that contains the spleen scores 0.87**, and still 0.88 with the organ pushed
+   40 voxels off-centre. The checkpoint is fine; whole volumes are what break.
+2. **A crop with no spleen in it predicts 0.2 % positive** — the net does not hallucinate on
+   empty windows, so the usual "background windows cause false positives" story is wrong.
+3. **`predict_volume` on one 128³ window is bit-identical to a direct `net(x)`** (Dice 0.874,
+   mean |p_direct − p_sw| = 0.0000), so the sliding-window inferer is not the culprit either.
+
+That leaves the training distribution. `sample_patch` was drawing every positive crop centred
+on an organ voxel — the spleen is always near the middle of a positive window — and every
+negative crop from the *volume centre*, which is one fixed liver/stomach view per case. A net
+can fit that with "paint a spleen-shaped blob near the middle of whatever window I get", which
+is exactly the 0.87-crop / 0.33-volume split.
+
+Fixed in `src/data/ct_volume.py` (`sample_patch`, 19 tests still pass): positive centres are
+jittered by up to a quarter of the ROI so the organ is not always centred, and negatives are
+drawn uniformly from the volume instead of the centre. 40 epochs was also far too few —
+2,560 optimizer steps for a 3D U-Net — so the next run uses 90 (~1.8 GPU-hours).
