@@ -2,7 +2,7 @@
 
 > Portal step 7: *"Containerize with Docker and document the model's limits and bias. Include a clear 'for education
 > only, not clinical use' notice."* This file **is** that deliverable. Every number below is filled from a measured
-> run except Track B, which is explicitly marked pending — nothing here is a placeholder.
+> hosted-GPU run — nothing here is a placeholder.
 
 ## ⚠ Intended use
 
@@ -20,7 +20,7 @@ screen, or treat any patient, and no clinical decision should rely on its output
 | Track A metrics, confusion matrix, baseline comparison | `results/densenet_metrics.json` — notebook 03, kernel `bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray` | Kaggle T4, 4,003 test images |
 | Calibration | `results/calibration.json`, computed from `results/test_predictions_with_metadata.csv` | same 4,003-image test split |
 | Subgroups, Grad-CAM | `results/gradcam_fairness_summary.json` and `results/gradcam_focus.csv` — notebook 04, kernel `bikash24795/aiml-02-notebook-04-grad-cam-and-fairness` | Kaggle T4, same split |
-| Track B | **pending** — the only executed copy is a local CPU smoke run | not reportable |
+| Track B | `results/spleen_metrics.json`, `results/spleen_per_case.csv`, overlays in `results/plots/spleen_overlays.png` — notebook 05, kernel `bikash24795/aiml-02-notebook-05-monai-spleen-segmentation` | Kaggle T4, 6 held-out CT volumes |
 
 The `notebooks/_smoke/executed_*.ipynb` files are **local CPU smoke runs**, kept to prove the code paths execute:
 notebook 03 was exercised on 96/60/40 images for 3 epochs (test AUROC 0.9475 on 40 images) and notebook 05 on a
@@ -258,32 +258,42 @@ the model changes radiologist behaviour at all.
 | Training data | MSD Task09_Spleen, 41 volumes — 28 train / 7 val / 6 test, seed 7, patient-safe by construction |
 | Metric | Mean Dice, plus per-case Dice |
 | Inference | Sliding window (0.5 overlap, Gaussian blend), ROI 128³ |
-| Status | **Run once on a Kaggle T4 (2026-10-26, 50.4 GPU-min) but the number is not a performance claim** — a sampler bug invalidates it, see below |
+| Status | **Run on a Kaggle T4 (2026-10-27, 119.3 GPU-min, 90 epochs) — quotable.** The earlier 40-epoch run is kept below only as the record of a bug that has since been fixed |
 
 | Metric | Value |
 |---|---|
-| Mean Dice (val) | 0.397 at epoch 39 (quick val, 3 cases); best 0.410 at epoch 19 |
-| Mean Dice (test) | 0.329 — median 0.370, range 0.058–0.440, n = 6 |
-| Worst-case Dice | 0.058 (`spleen_24`) |
-| Median inference time / volume | not recorded; the sliding-window pass over the 6 test volumes took 1.8 min wall clock |
+| Mean Dice (val) | 0.9357 best at epoch 79 (quick val, 3 cases); trajectory 0.305 → 0.665 → 0.885 → 0.906 → 0.695 → 0.837 → 0.540 → **0.936** → 0.899 at epochs 9/19/29/39/49/59/69/79/89 |
+| Mean Dice (test) | **0.8586** — median 0.9124, range 0.5972–0.9480, n = 6, no zero-Dice cases |
+| Worst-case Dice | 0.5972 (`spleen_31`) — under-segmentation, 159 ml predicted against a 357 ml reference, centroid 8.1 mm off |
+| Best case | 0.9480 (`spleen_10`), 242 ml against 253 ml, centroid 0.7 mm off |
+| `n_below_0_5` | 0 of 6 |
+| Inference | sliding-window pass over all 6 test volumes took 4 min wall clock |
 
-**Why 0.329 is not the model's performance.** The run (`epochs_total = 40`, 128 patches/epoch, batch 2, 128³
-ROI) completed and wrote `spleen_metrics.json`, but every prediction is 4–5× too large — 917–1,777 ml against
-references of 55–361 ml — with centroids 114–160 mm from the reference. The sampler built each positive crop
-from a voxel *inside* the organ and each negative crop from the volume centre, so the net learned a fixed blob
-near the middle of the window rather than the organ: the same checkpoint scored 0.87 Dice on a hand-picked 128³
-crop that contains the spleen. `sample_patch` now jitters the positive centre by up to a quarter of the ROI and
-draws negatives uniformly over the volume, and the schedule is 90 epochs. **The rerun has not been pushed yet;
-until its `spleen_metrics.json` lands, Track B has no quotable Dice number.** The target for this dataset is
-0.80–0.90, which MONAI's own spleen tutorial reaches.
+The mean sits inside the 0.80–0.90 band MSD spleen baselines target, and the per-case table shows *why* the mean
+is not the whole story: five of six volumes score ≥ 0.84, and the one outlier misses most of a large spleen rather
+than hallucinating (prediction smaller than reference, not a blob elsewhere). Predicted volumes now land within
+3–13 % of the reference for those five, against a 55 % shortfall on the outlier and the 4–5× overshoot of the first
+run; the two volumes whose centroids move most (`spleen_24` 36.6 mm, `spleen_63` 13.7 mm) still score 0.846 and
+0.905, which is the signature of an elongated organ against a round centroid measure, not of a misplaced mask.
+
+**What the first run got wrong, and what changed.** The 2026-10-26 run (`epochs_total = 40`) scored 0.329 mean
+test Dice with every prediction 4–5× too large — 917–1,777 ml against references of 55–361 ml, centroids 114–160 mm
+away. The sampler built each positive crop from a voxel *inside* the organ and each negative crop from the volume
+centre, so the net learned a fixed blob near the middle of the window rather than the organ: the same checkpoint
+scored 0.87 Dice on a hand-picked 128³ crop containing the spleen. `sample_patch` now jitters the positive centre
+by up to a quarter of the ROI and draws negatives uniformly over the volume; the schedule went to 90 epochs
+(128 patches/epoch, batch 2, 128³ ROI, lr 1e-4, seed 7 — all recorded in `results/spleen_metrics.json`). That
+single change moved test Dice from 0.329 to 0.8586, which is the honest attribution for this number.
 
 For the record, `notebooks/_smoke/executed_05_segment_spleen.ipynb` is only a code-path check (`run_on: local`,
 `device: cpu`, 1 epoch / 2 optimizer steps, Dice 0.0142); by the repo's rule (§5 of the runbook) a local run is
 never a result.
 
 **Limits:** trained on 41 volumes from a single collection. Small spleens, post-surgical anatomy, and unusual
-contrast timing are underrepresented. A low-Dice tail matters more than the mean — when the hosted run lands,
-report the worst cases and `n_below_0_5`, not just the average.
+contrast timing are underrepresented, and the worst case here is exactly the failure mode to watch — a large spleen
+partly left unlabelled. Six test volumes is a small sample: 0.8586 carries a wide confidence interval, and a single
+extra miss would move the mean by roughly 0.05. Dilated or displaced organs, CT with strong artefacts, and any
+non-contrast protocol are untested.
 
 ---
 

@@ -185,3 +185,31 @@ Fixed in `src/data/ct_volume.py` (`sample_patch`, 19 tests still pass): positive
 jittered by up to a quarter of the ROI so the organ is not always centred, and negatives are
 drawn uniformly from the volume instead of the centre. 40 epochs was also far too few —
 2,560 optimizer steps for a 3D U-Net — so the next run uses 90 (~1.8 GPU-hours).
+
+### 6.2 The 90-epoch rerun: 0.8586, and the sampler was the whole story
+
+Kernel version 8 ran on 2026-10-27 (T4, 119.3 GPU-min wall clock, 90 epochs at 128 patches each) and
+reported mean test Dice **0.8586** — median 0.9124, range 0.5972–0.9480, `n_zero_dice` 0, `n_below_0_5` 0.
+Quick-val peaked at 0.9357 on epoch 79, which is the checkpoint the test section loaded.
+
+| epoch | 9 | 19 | 29 | 39 | 49 | 59 | 69 | 79 | 89 |
+|---|---|---|---|---|---|---|---|---|---|
+| quick-val Dice | 0.305 | 0.665 | 0.885 | 0.906 | 0.695 | 0.837 | 0.540 | **0.936** | 0.899 |
+
+Three things to take from it:
+
+- **Only the sampler changed between 0.329 and 0.8586.** No architecture, ROI, loss or inference change;
+  the epoch count went 40 → 90, but the diagnostic above showed a correctly-sampled 40-epoch checkpoint
+  already scoring 0.87 on spleen-containing crops. If a future run regresses, re-check `sample_patch`
+  before touching hyperparameters.
+- **The val curve is noisy, not monotone** (0.906 → 0.695 → 0.837 → 0.540 on 3 cases). Three validation
+  volumes cannot rank checkpoints reliably; the best-checkpoint rule is what kept 0.9357, and the final
+  test score on 6 unseen volumes is the number to quote.
+- **Failure mode moved from "wrong shape" to "under-segmentation".** The worst case, `spleen_31`
+  (Dice 0.597), predicts 159 ml against a 357 ml reference with its centroid 8.1 mm off — it finds the
+  organ and labels part of it, instead of painting a blob in the middle of the window as the old model did.
+
+Pushing a rerun takes three steps, all used here: rebuild `repo.zip` from the working tree, upload it as
+a new version of the private dataset (`kaggle datasets version -p <stage> -m ...`), then
+`kaggle kernels push -p <stage>` — the kernel picks up the new dataset version at the next run. Logs are
+only served after the run finishes, so poll `kaggle kernels status` rather than trying to stream.
