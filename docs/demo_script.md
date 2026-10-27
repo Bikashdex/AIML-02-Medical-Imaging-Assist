@@ -7,13 +7,13 @@ take if you can; the numbers do not drift between runs because the model runs on
 **What the video must prove** (that is what is being graded):
 
 1. The classifier exists, is trained, and answers with real numbers on real DICOM files.
-2. The service is a service — HTTP, not a notebook cell.
-3. A radiologist-facing viewer shows the scan, the score and an audit decision.
+2. The service is a service — HTTP, not a notebook cell — and a study pushed into Orthanc reaches it unattended.
+3. A radiologist-facing viewer shows the scan, the score and an audit decision that lands in a database.
 4. The segmentation track works too (0.8586 Dice, not the 0.329 first attempt).
 5. You can state the limits without being asked.
 
 **What it must not do:** claim clinical use, show a Docker/Orthanc flow that is not actually running, or quote a
-number that is not in `results/`. The disclosure lines in shots 8 and 9 exist for that reason — say them.
+number that is not in `results/`. The disclosure lines in shot 8 exist for that reason — say them.
 
 ---
 
@@ -28,7 +28,8 @@ number that is not in `results/`. The disclosure lines in shots 8 and 9 exist fo
 | Venv | `C:\Users\kumar\venvs\aiml02-py312\Scripts\activate` (Python 3.12, torch 2.14.1+cpu) |
 | API boot time | ~10 s (container already running; check first) |
 | Viewer boot | 10–35 s on this laptop; start terminal B early, then switch to it |
-| Container | `docker ps` shows `aiml02-api` **healthy** on `0.0.0.0:8010->8000/tcp` |
+| Container | `docker ps` shows **three** healthy containers: `aiml02-orthanc` (8042/4242), `aiml02-api` (8010), `aiml02-ingest` |
+| Audit rows | `docker exec aiml02-api python -c "import sqlite3; print(sqlite3.connect('/data/audit.db').execute('select count(*) from decisions').fetchone())"` — if it errors, the volume lost its ownership (see recovery table) |
 
 Three windows, in this order:
 
@@ -37,14 +38,13 @@ Three windows, in this order:
 3. **Browser** — `http://localhost:5173` (use `localhost`, not `127.0.0.1`; Vite binds to the IPv6 loopback).
 4. **Slides** — `aiml02-presentation/AIML-02-Medical-Imaging-Assist.pptx`, 13 slides, presenter view on.
 
-> **Docker is part of the recording, with one gap.** The engine is back and the API container (`aiml02-api`, 2.09 GB,
-> built offline from `wheelhouse/`) is healthy on **8010**. What is still missing is `orthancteam/orthanc`: nine pulls
-> have stalled at "Pulling fs layer" and never completed a single layer, so the stack runs as
-> `docker compose up -d --no-deps api` and there is no C-STORE → ingest → audit path to show. Say that in shot 8; do
-> not imply the Orthanc box exists.
+> **The whole stack runs.** Orthanc pulled on the tenth attempt (2.63 GB), so there are three containers now:
+> `aiml02-orthanc` receives DICOM and serves the REST API on 8042, `aiml02-api` answers on 8010, and `aiml02-ingest`
+> polls Orthanc's `/changes` feed and forwards every new instance to `/predict`. Shot 5 shows a file pushed into
+> Orthanc getting scored without anyone touching the viewer; shot 6 shows the viewer writing an audit row.
 >
-> **Latency you will see on camera:** the container answers a study in **7–14 s** on this laptop (4 vCPU, 2 torch
-> threads inside Docker Desktop's VM). The same code and weights in the host venv answer in **0.42 s**. Record with the
+> **Latency you will see on camera:** **1–2 s** per study when the machine is idle, up to **14 s** while Docker is
+> busy (a pull or a build competes for the same four cores). The host venv is faster still (~0.4 s). Record with the
 > container — it is the deployable artefact — and use the wait to talk. The venv fallback at the end of this section
 > keeps the recording honest if the container misbehaves.
 
@@ -54,12 +54,12 @@ Start the stack:
 ```bat
 cd C:\Users\kumar\Documents\Qoder\2026-10-22\410be6bc\AIML-02-medical-imaging
 set API_PORT=8010
-docker compose up -d --no-deps api
-docker ps --format "{{.Names}}  {{.Status}}  {{.Ports}}"
+docker compose up -d
+docker ps --format "{{.Names}}  {{.Status}}"
 curl -s http://localhost:8010/health
 ```
 
-Expected: `aiml02-api  Up About an hour (healthy)  0.0.0.0:8010->8000/tcp` and
+Expected: `aiml02-orthanc` healthy, `aiml02-api` healthy, `aiml02-ingest` up, and
 `{"status":"ok","model_loaded":true,"device":"cpu", ...}`.
 
 **Terminal B**
@@ -133,7 +133,7 @@ Point at slide 3's fact table: RSNA 26,684 DICOM files versus MSD 41 CT volumes,
 > label-semantics gap. The label 1 in RSNA means 'any lung opacity', not 'pneumonia'. A model can nail that label and
 > still be useless for a pneumonia question."
 
-### Shot 5 — 5:00–6:30 · Live API (Terminal A)
+### Shot 5 — 5:00–6:20 · Live API, then Orthanc → ingest (Terminal A)
 
 **Type (or paste) in Terminal A — a second window, API already running:**
 
@@ -169,18 +169,18 @@ Real output:
 curl -s -F "file=@data/raw/rsna/stage_2_train_images/019d950b-dd38-4cf3-a686-527a75728be6.dcm" http://localhost:8010/predict
 ```
 
-Real output from the container (trimmed to the fields that matter) — it arrives after 7–14 s:
+Real output from the container (trimmed to the fields that matter) — a second or two on this laptop:
 
 ```
 "prediction":"opacity","probability":0.8685,"threshold_used":0.5107557773590088,
-"model_version":"unversioned","inference_ms":7135.5,
+"model_version":"unversioned","inference_ms":1232.76,
 "dicom_tags":{"patient_id":"019d950b-dd38-4cf3-a686-527a75728be6","modality":"CR","rows":1024,"columns":1024, ...}
 ```
 
 > "0.8685 against a threshold of 0.5108 — opacity. The response carries the DICOM tags back, the model version, and
-> the threshold that was actually used, so a decision can be reconstructed later. Seven seconds is what CPU inference
-> costs inside Docker Desktop's VM on a four-core laptop; the same weights from the host's Python are half a second,
-> so the gap is the VM, not the model."
+> the threshold that was actually used, so a decision can be reconstructed later. About a second and a quarter here;
+> the same call took fourteen seconds while Docker was pulling an image, so the latency is the VM's load, not the
+> model."
 
 **The negative:**
 
@@ -191,49 +191,90 @@ curl -s -F "file=@data/raw/rsna/stage_2_train_images/000924cf-0f8d-42bd-9158-1af
 Real output:
 
 ```
-"prediction":"no_opacity","probability":0.1826,"threshold_used":0.5107557773590088,"inference_ms":9380.5, ...
+"prediction":"no_opacity","probability":0.1826,"threshold_used":0.5107557773590088,"inference_ms":1034.97, ...
 ```
 
 > "Same endpoint, same threshold, 0.1826 — no opacity. The threshold is not something I tuned per demo: it comes out
 > of the checkpoint as the operating point."
 
-### Shot 6 — 6:30–7:30 · The viewer (browser)
+**Now the unattended path — push a study into Orthanc and touch nothing else:**
+
+```bat
+curl -s -X POST --data-binary @data/raw/rsna/stage_2_train_images/6e58e404-9da9-44b7-bc0a-0d08a2ec448f.dcm ^
+  -H "Content-Type: application/dicom" http://localhost:8042/instances
+docker logs --tail 2 aiml02-ingest
+```
+
+Real output (a few seconds later):
+
+```
+"ID" : "07cd2950-7137f74d-a2762e86-01a7b560-7ec3c8f2",  "Status" : "Success"
+[ingest] 07cd2950-7137f74d-a2762e86-01a7b560-7ec3c8f2 -> no_opacity p=0.184 (1006.53ms)
+```
+
+> "That is the same chain a CT or X-ray scanner would drive: the file lands in Orthanc, the ingest worker sees it in
+> Orthanc's changes feed, fetches the instance and posts it to the API. Nobody clicked anything. The interesting
+> detail is in the poller: Orthanc 1.13 merges child changes into their parent, so a new image arrives as a *patient*
+> change — the worker walks patient → studies → instances, and remembers instance IDs for as long as it runs, so a
+> merged change that re-lists the same patient is not scored twice."
+
+### Shot 6 — 6:20–7:20 · The viewer and the audit trail (browser)
 
 Switch to `http://localhost:5173`. **Upload in this order — the PNGs first**: a `.dcm` upload gets a card and its tags,
 but the browser cannot draw the DICOM pixels, so that panel reads "Browser preview not available". The PNG path is what
 shows the actual radiograph.
 
 ```
-%TEMP%\aiml02_test\positive.png     -> image + "opacity - 86.9%"
+%TEMP%\aiml02_test\positive.png     -> image + "opacity - 86.9%", then Approve
 %TEMP%\aiml02_test\negative.png     -> image + "no_opacity - 18.3%"
-%TEMP%\aiml02_test\positive.dcm     -> tags + Approve
+%TEMP%\aiml02_test\positive.dcm     -> tags only (no decision needed)
 ```
 
 > "This is the radiologist-facing part. Upload a study, and the viewer calls the same endpoint through a dev proxy, so
 > what you see here is the service, not a mocked response."
 
-Upload `positive.png`:
+Upload `positive.png`, then click **Approve**:
 
 > "86.9 percent, opacity. The education banner is on screen permanently — 'For education only, not for clinical use' —
-> and the 60 percent overlay slider is where a Grad-CAM heatmap would fade in."
-
-Upload `negative.png`:
-
-> "18.3 percent, no opacity. Two studies in the list now, each with its own decision state."
-
-Upload `positive.dcm`, then click **Approve**:
-
-> "Same study as a DICOM: 86.9 percent with the real tags read out of the file — patient ID, CR, 1024 by 1024. This
-> one shows tags instead of pixels, because the viewer does not decode DICOM, and I would rather show that than hide it.
+> and the 60 percent overlay slider is where a Grad-CAM heatmap would fade in.
 >
 > The heatmap toggle stays disabled and says why: '(none from API yet)'. The API returns a probability, not a Grad-CAM
 > overlay. A disabled control with an honest label beats a toggle that does nothing.
 >
-> Approve moves the study to 'approved'. Note the line underneath: decisions live in this session only until the audit
-> endpoint is wired to `audit.db` — that is the row still red in my README. Reject shares the same handler; I am not
-> clicking it here to keep the recording short."
+> Approve moves the study to 'approved' and the line underneath names the row it wrote: **'Decision written to the
+> audit log as row 4.'** That is a real `POST /audit`, a real SQLite insert in the `audit-data` volume, and the screen
+> only says 'saved' after the API answers 201. Reject shares the same handler; I am not clicking it here to keep the
+> recording short."
 
-### Shot 7 — 7:30–8:30 · Track B and the bug (slides 8–9)
+**Prove the row exists outside the browser:**
+
+```bat
+curl -s http://localhost:8010/audit/positive.png
+docker exec aiml02-api python -c "import sqlite3; print(sqlite3.connect('/data/audit.db').execute('select id, study_uid, decision, reason from decisions').fetchall())"
+```
+
+Real output (row numbering depends on how many decisions the volume already holds):
+
+```
+{"study_uid":"positive.png","decisions":[{"id":4,"recorded_at":"2026-10-27T14:55:41+00:00","study_uid":"positive.png",
+ "decision":"approved","reason":null,"probability":0.8685,"threshold_used":0.5107557773590088,"model_version":"unversioned"}], ...}
+[(1, '1.2.3.demo', 'approved', 'live wiring check'), (2, '1.2.3.demo2', 'rejected', 'artefact'),
+ (3, 'proxy.check', 'approved', None), (4, 'positive.png', 'approved', None)]
+```
+
+> "The decision, the probability and the threshold that produced it are in a table in the audit volume, keyed by study.
+> A PNG has no StudyInstanceUID, so the key falls back to the filename — worth saying out loud, because a real
+> deployment would reject an upload without a study UID."
+
+Then upload `negative.png`, and finally `positive.dcm`:
+
+> "18.3 percent, no opacity. Two studies in the list now, each with its own decision state.
+>
+> And the same case as a DICOM: 86.9 percent with the real tags read out of the file — patient ID, CR, 1024 by 1024.
+> This one shows tags instead of pixels, because the viewer does not decode DICOM, and I would rather show that than
+> hide it."
+
+### Shot 7 — 7:20–8:20 · Track B and the bug (slides 8–9)
 
 > "Track B is the spleen. The first run scored 0.329 Dice after 40 epochs — a result I could have shipped quietly,
 > because 0.329 beats the zero-Dice floor that a broken model produces. Instead I looked at the predictions, and they
@@ -250,26 +291,30 @@ Upload `positive.dcm`, then click **Approve**:
 > reference volume. The sixth predicts 159 millilitres against a reference of 357 — it under-segments badly. That is
 > the case I would show a clinician, not the 0.86."
 
-### Shot 8 — 8:30–9:20 · What is not done (slides 10–12)
+### Shot 8 — 8:20–9:20 · What is not done (slides 10–12)
 
-> "Now the part that is usually skipped. The Orthanc wiring is written but not wired: the ingest poller and the SQLite
-> audit trail exist in the repo, and they have never pulled a DICOM, because the Docker engine on this machine would
-> not start and the Orthanc image could not be pulled. The API image itself was built offline from a local wheelhouse
-> and does serve predictions — 2.09 gigabytes, running — but it runs with `--no-deps` and the compose stack is
-> incomplete. That is a red row in my README, deliberately.
+> "Now the part that is usually skipped. The audit endpoint has no authentication and no tamper detection: anyone who
+> can reach port 8010 can append a decision, and anyone with the file can edit the SQLite table. An append-only schema
+> with no auth is a prototype of an audit trail, not an audit trail. The viewer also does not decode DICOM pixels, so
+> a `.dcm` shows its tags and no image — the screenshot path is the PNG.
 >
-> The viewer verification is DOM-level: the in-app browser was hidden during that session, so I have the values and no
-> screenshot. I am telling you that rather than showing a screenshot from somewhere else.
->
-> Six held-out CT volumes is a small test set. A 0.13 calibration error is over-confident. And there is no regulatory
-> clearance of any kind — this is a capstone, not a device."
+> The numbers have limits too. Six held-out CT volumes is a small test set. A 0.13 calibration error means the model is
+> over-confident — I measured that and did not correct it, which is why there is no temperature scaling in the serving
+> path. And there is no regulatory clearance of any kind: this is a capstone, not a device."
+
+If you have time, add the honest version of the build story in one line:
+
+> "Getting this stack up took ten attempts at the Orthanc image and two fixes worth naming: Orthanc 1.13 rejects a
+> boolean `StableAge` and needs integer seconds, and the audit volume was mounted root-owned, so SQLite could not
+> create its file until the image chowned `/data`."
 
 ### Shot 9 — 9:20–10:00 · Close (slide 13)
 
 > "Four things I would do next, in this order. Train the spleen model longer — validation was still improving at epoch
 > 79, so 100 to 200 epochs is the cheapest path to 0.90. Calibrate the classifier with temperature scaling; it is a
-> one-evening fix for a 0.13 ECE. Finish the Orthanc wiring so a DICOM arriving at a server triggers the whole chain
-> without a human uploading a file. And validate outside RSNA, because one hospital's images are one distribution.
+> one-evening fix for a 0.13 ECE. Put authentication and a hash chain on the audit endpoint, so the log is evidence
+> rather than a table anyone can append to. And validate outside RSNA, because one hospital's images are one
+> distribution.
 >
 > The number I trust most is not 0.8819. It is that the same model scores 0.99 on 'opacity' labels and 0.67 on 'no
 > opacity' labels — because that is the number that told me what the model actually learned. Thank you."
@@ -284,10 +329,10 @@ Upload `positive.dcm`, then click **Approve**:
 | 2 | Two tracks, why both | 0:40 | 1:30 |
 | 3 | AUROC 0.8819 and the +0.142 | 2:10 | 1:30 |
 | 4 | Grad-CAM, calibration, fairness | 3:40 | 1:20 |
-| 5 | Live `/health`, `/model-info`, two `/predict` calls | 5:00 | 1:30 |
-| 6 | Viewer: 18.3 %, 86.9 %, Approve | 6:30 | 1:00 |
-| 7 | The sampler bug, 0.329 → 0.8586 | 7:30 | 1:00 |
-| 8 | Honest gaps | 8:30 | 0:50 |
+| 5 | Live `/health`, `/model-info`, two `/predict` calls, Orthanc → ingest | 5:00 | 1:20 |
+| 6 | Viewer: 86.9 %, Approve → audit row, 18.3 %, tags | 6:20 | 1:00 |
+| 7 | The sampler bug, 0.329 → 0.8586 | 7:20 | 1:00 |
+| 8 | Honest gaps | 8:20 | 1:00 |
 | 9 | Next steps, close | 9:20 | 0:40 |
 
 If you run long, cut shot 4 to the label-semantics paragraph only. Never cut shot 8.
@@ -303,7 +348,9 @@ If you run long, cut shot 4 to the label-semantics paragraph only. Never cut sho
 | Browser cannot reach the API | Use `localhost`, not `127.0.0.1`; Vite binds IPv6. Check `set VITE_API_TARGET=http://localhost:8010` in Terminal B |
 | `/predict` returns 503 `no model at …` | (venv fallback only) `MODEL_PATH` is relative — the shell must be in the repo root, not `frontend/` |
 | First request takes longer than 14 s | The machine is loaded (a docker pull, a Vite boot). Wait it out; if it passes 60 s, restart the container |
-| Docker question from a reviewer | "The API runs in its own image; Orthanc never pulled — nine attempts stalled at the first layer — so the stack is `--no-deps api` and ingest is unwired. That is row 4 in the README, still yellow." |
+| `ingest` logs `API error: Connection refused` | It started before uvicorn bound the port. The compose file now waits for the API healthcheck; if you see it, the API is still loading — the poller retries the same study next tick |
+| The viewer says `Not recorded: …` | The audit POST failed. Check `docker logs aiml02-api`; a 500 usually means the `audit-data` volume is root-owned — `docker run --rm --user root -v aiml-02-medical-imaging_audit-data:/data aiml-02-medical-imaging-api:latest chown 10001:10001 /data` |
+| Docker question from a reviewer | "Three containers: Orthanc receives, ingest forwards via `/changes`, the API scores, the viewer writes an audit row. Orthanc 1.13 needed an integer `StableAge`, and the audit volume needed chowning to the app user — both are fixed in the repo." |
 
 ## Facts you may not improvise
 

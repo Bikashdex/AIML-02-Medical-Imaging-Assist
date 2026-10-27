@@ -46,15 +46,14 @@ artefact store and the Docker build but not the live DICOM path.
 | # | Step | Where | Notes |
 |---|---|---|---|
 | 1 | Study arrives | Orthanc | Pushed via DICOM C-STORE to AE title `AIML02` on port 4242 |
-| 2 | New instance detected | `orthanc_poller.py` | Polls `/discover/changes`; `StableAge: true` avoids half-arrived studies |
+| 2 | New instance detected | `orthanc_poller.py` | Polls `/changes` every `POLL_INTERVAL_SECONDS`; `StableAge` is **60** (integer seconds — Orthanc 1.13 rejects a boolean value). Orthanc ≥ 1.12 merges child changes into their parent, so a new image usually arrives as a *patient* change and the poller resolves patient → studies → instances |
 | 3 | DICOM read | `src/data/dicom_io.py` | `pydicom` reads tags; **windowing** applied before the model sees pixels |
 | 4 | Preprocess | `src/data/` | Resize 224×224, ImageNet normalisation |
 | 5 | Predict | `src/api/main.py` | DenseNet121 → sigmoid probability |
-| 6 | Explain | `src/models/gradcam.py` | Hook on the last dense block, ReLU'd activation map overlaid |
-| 7 | Persist | `audit.db` | One row per study, decision starts as `pending` |
-| 8 | Review | React viewer | Radiologist approves or rejects, with a free-text reason |
-| 9 | Audit | `audit.db` | Decision, user and timestamp appended — never overwritten |
-| 10 | Monitor | `src/monitor/drift.py` | PSI of incoming pixel statistics vs training reference |
+| 6 | Explain | `src/models/gradcam.py` | Hook on the last dense block, ReLU'd activation map overlaid — offline only; `/predict` returns no `overlay_url` yet, which is why the viewer's toggle is disabled |
+| 7 | Review | React viewer | Radiologist approves or rejects, with a free-text reason; nothing is persisted before that |
+| 8 | Audit | `audit.db` | `POST /audit` appends one row: `study_uid`, decision, reason, probability, threshold, model version, timestamp. No `pending` rows, no update path |
+| 9 | Monitor | `src/monitor/drift.py` | PSI of incoming pixel statistics vs training reference — offline script, not wired into serving |
 
 ## 3. API contract
 
@@ -69,28 +68,33 @@ Response `200`:
 {
   "study_uid": "1.2.840.113619.2.55.3...",
   "prediction": "opacity",
-  "probability": 0.87,
-  "threshold_used": 0.55,
-  "overlay_path": "/overlays/1.2.840....png",
-  "model_version": "densenet121-2026-11-02",
-  "inference_ms": 41.2,
+  "probability": 0.8685,
+  "threshold_used": 0.5107557773590088,
+  "model_version": "unversioned",
+  "inference_ms": 1232.76,
+  "dicom_tags": {"patient_id": "019d950b-…", "modality": "CR", "rows": 1024, "columns": 1024},
   "disclaimer": "For education only. Not for clinical use."
 }
 ```
 
-Errors: `400` unreadable/unsupported image, `413` over the size limit, `503` model not loaded.
+`study_uid` falls back to the uploaded filename when the file is a PNG/JPG and no `study_uid` form field is given.
+There is no `overlay_url`: Grad-CAM is produced offline, not per request.
+
+Errors: `400` unreadable/unsupported image, `422` validation, `503` model not loaded.
 
 ### `GET /health`
-`{"status": "ok", "model_loaded": true, "gpu": false}` — used by the Docker `HEALTHCHECK`.
+`{"status": "ok", "model_loaded": true, "device": "cpu", "disclaimer": "…"}` — used by the Docker `HEALTHCHECK`.
 
 ### `GET /model-info`
-Model name, training dataset and version, split policy, metrics, training date, licence, intended-use statement.
+Model name, version, task, **label semantics**, split policy, disclaimer.
 
-### `GET /studies?status=pending&limit=50`
-Paged list from the audit table for the viewer.
+### `POST /audit`
+`{"study_uid": "…", "decision": "approved" | "rejected", "reason": "…", "probability": 0.86, "threshold_used": 0.51, "model_version": "…"}`
+→ `201` with the inserted row. The decision pattern is enforced by pydantic, so `"maybe"` is a `422`.
+**No authentication** — this is the main gap between the demo and a real audit trail.
 
-### `POST /studies/{study_uid}/decision`
-`{"decision": "approve" | "reject", "radiologist_id": "...", "reason": "..."}` → appends to the audit log.
+### `GET /audit/{study_uid}`
+Every decision recorded for that study, oldest first.
 
 ## 4. Design decisions and their trade-offs
 
@@ -105,8 +109,11 @@ Paged list from the audit table for the viewer.
 
 ## 5. Security and privacy notes
 
-- Patient identifiers are hashed before they reach the audit log; raw `PatientID` stays inside Orthanc.
-- Orthanc runs with `AuthenticationEnabled: false` and `RestApiAllowedIps` open **for the demo only**. In a real
-  deployment: enable authentication, bind ports to localhost or an internal network, and put TLS in front.
+- The audit row stores the study UID, the probability and threshold that produced the decision, the model version and
+  a free-text reason — no patient name. The reason is typed by a human, so it is not de-identified by construction.
+- **Nothing is authenticated.** Orthanc runs with `AuthenticationEnabled: false`, `/audit` accepts unauthenticated
+  writes, and `audit.db` is a plain SQLite file inside a Docker volume: anyone with the file can edit the table, so the
+  log is not tamper-evident. In a real deployment: enable authentication, bind ports to localhost or an internal
+  network, put TLS in front, and hash-chain or sign each audit row.
 - `kaggle.json` and any Orthanc credentials are git-ignored. Never commit them.
 - No PHI is committed to this repository. RSNA data is de-identified at source.
