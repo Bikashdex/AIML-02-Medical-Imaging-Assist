@@ -17,7 +17,7 @@ screen, or treat any patient, and no clinical decision should rely on its output
 
 | Section | Source of truth | Host and sample |
 |---|---|---|
-| Track A metrics, confusion matrix, baseline comparison | `results/densenet_metrics.json` — notebook 03, kernel `bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray` | Kaggle T4, 4,003 test images |
+| Track A metrics, confusion matrix, baseline comparison | `results/densenet_metrics.json`; the matrix itself is plotted in `results/plots/confusion_matrix.png`, recomputed from `results/test_predictions_with_metadata.csv` and cross-checked against the JSON counts — notebook 03, kernel `bikash24795/aiml-02-notebook-03-densenet121-chest-x-ray` | Kaggle T4, 4,003 test images |
 | Calibration | `results/calibration.json`, computed from `results/test_predictions_with_metadata.csv` | same 4,003-image test split |
 | Subgroups, Grad-CAM | `results/gradcam_fairness_summary.json` and `results/gradcam_focus.csv` — notebook 04, kernel `bikash24795/aiml-02-notebook-04-grad-cam-and-fairness` | Kaggle T4, same split |
 | Track B | `results/spleen_metrics.json`, `results/spleen_per_case.csv`, overlays in `results/plots/spleen_overlays.png` — notebook 05, kernel `bikash24795/aiml-02-notebook-05-monai-spleen-segmentation` | Kaggle T4, 6 held-out CT volumes |

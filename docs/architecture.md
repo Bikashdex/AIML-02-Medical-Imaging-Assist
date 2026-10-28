@@ -5,38 +5,34 @@
 
 ## 1. System diagram
 
+GitHub renders this Mermaid block; the same topology is three Compose services plus a dev-server front end.
+
+```mermaid
+flowchart TB
+    scanner["Scanner / radiologist<br/>DICOM C-STORE"] -->|":4242 AE: AIML02"| orthanc
+    upload["Viewer upload<br/>PNG / JPG / DCM"] -->|"POST /predict"| api
+
+    subgraph docker["docker compose"]
+        orthanc["<b>aiml02-orthanc</b><br/>Orthanc 1.13<br/>:4242 DICOM · :8042 REST + DICOMweb"]
+        ingest["<b>aiml02-ingest</b><br/>src/ingest/orthanc_poller.py<br/>polls /changes every 5 s"]
+        api["<b>aiml02-api</b><br/>FastAPI + uvicorn :8000<br/>DenseNet121, CPU"]
+        auditdb[("<b>audit.db</b> SQLite<br/>audit-data volume")]
+    end
+
+    orthanc -->|"GET /instances/{id}/file"| ingest
+    ingest -->|"POST /predict (multipart)"| api
+    api -->|"POST /audit · GET /audit/{uid}"| auditdb
+    viewer["React viewer (Vite :5173)<br/>proxies /predict and /audit"] -->|"Approve / Reject"| auditdb
+    viewer -->|"upload"| api
+
+    weights["artifacts/densenet121_lungopacity.pt<br/>(DVC, ~27 MB)"] -.->|"loaded once at boot"| api
+
+    offcam["Offline, not in the serving path<br/>Grad-CAM study (notebook 04) · drift PSI (src/monitor)"] -.->|"writes results/"| results[("results/*.json, results/plots/")]
 ```
-   Radiologist uploads DICOM
-             |
-             v
-  +---------------------+   DICOMweb / C-FIND    +----------------------+
-  |  Orthanc (Docker)   | <--------------------> |  Ingestion service   |
-  |  AE title: AIML02   |                        |  src/ingest/         |
-  |  :4242 DICOM        |                        |  orthanc_poller.py   |
-  |  :8042 HTTP         |                        |  DICOM -> array+meta |
-  +---------------------+                        +----------+-----------+
-                                                            |
-                                          POST /predict     |
-                                                            v
-  +---------------------+   load    +----------------------------------------+
-  |  artifacts/  (DVC)  | ------->  |  FastAPI inference service (Docker)    |
-  |  classifier.pt      |           |  src/api/main.py                       |
-  |  unet3d.pt          |           |  DenseNet121  +  Grad-CAM heatmap      |
-  |  model.onnx         |           +----------+-----------------------------+
-  +---------------------+                      | writes
-                                               v
-                                    +------------------------+     +------------------+
-                                    |  audit.db (SQLite)     | <-- |  React viewer    |
-                                    |  study_uid, label,     |     |  image + overlay |
-                                    |  confidence, decision, |     |  Approve/Reject  |
-                                    |  radiologist_id, ts    |     +------------------+
-                                    +------------------------+
-                                               ^
-                                    +------------------------+
-                                    |  Drift monitor         |
-                                    |  PSI on pixel stats    |
-                                    +------------------------+
-```
+
+What is deliberately absent: `/predict` returns no heatmap (Grad-CAM is produced offline in notebook 04, so the
+viewer's overlay toggle is disabled), there is no message queue between Orthanc and the API (the poller trades
+latency for simplicity), and `/audit` has no authentication — see §5.
 
 A second, offline track trains a 3D U-Net (MONAI `DynUNet`) on MSD Task09 spleen CT volumes. It shares the model
 artefact store and the Docker build but not the live DICOM path.
