@@ -5,6 +5,8 @@
 > This system is an internship capstone project. It is **not** a medical device, has **no regulatory clearance**, and
 > must **never** be used to diagnose, screen, or treat a patient. Any output shown here is illustrative only.
 
+[![ci](https://github.com/Bikashdex/AIML-02-Medical-Imaging-Assist/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Bikashdex/AIML-02-Medical-Imaging-Assist/actions/workflows/ci.yml)
+
 **Intern:** Bikash Kumar Singh · **ID:** NEX-INT-2026-0134 · **Track:** AI / Machine Learning
 **Company:** Nexvia Technologies · **Project:** AIML-02 (of 2) · **Deadline:** 10 November 2026
 
