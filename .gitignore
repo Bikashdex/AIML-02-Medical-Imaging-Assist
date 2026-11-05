@@ -75,3 +75,6 @@ notebooks/_nb03_scratch/
 notebooks/_nb04_scratch/
 notebooks/_nb05_scratch/
 notebooks/_smoke/
+wheelhouse/*.whl
+.env
+frontend/.env
