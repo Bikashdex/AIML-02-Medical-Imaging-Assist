@@ -184,3 +184,17 @@ async def predict(file: UploadFile = File(...), study_uid: str | None = None) ->
         inference_ms=round(elapsed_ms, 2),
         dicom_tags=None if tags is None else {key: _jsonable(value) for key, value in tags.items()},
     )
+# --- optional: serve the built React viewer from the same origin (free-tier deployment) ---
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+_DIST = Path(os.getenv("FRONTEND_DIST", "deploy/dist"))
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="viewer-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _spa(full_path: str):
+        candidate = _DIST / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_DIST / "index.html")
