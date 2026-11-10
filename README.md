@@ -377,7 +377,7 @@ project's development machine has 8 GB RAM and no GPU, so nothing here should be
 | 7 | ## 🎬 Demo Video
 
 A complete 10-minute end-to-end demonstration of the system is available here:  
-👉 **[Watch the AIML-02 Demo Video]([https://drive.google.com/file/d/18_7wiSiSdOaxHUAlI2IAksqW84c1fCmZ/view?usp=sharing])**
+👉 **[Watch the AIML-02 Demo Video](https://drive.google.com/file/d/18_7wiSiSdOaxHUAlI2IAksqW84c1fCmZ/view?usp=sharing)**
 
 *(The video covers: API health check, live DICOM upload via the React viewer, human-in-the-loop Approve/Reject decisions, SQLite audit log verification, and the unattended Orthanc → ingest polling path.)*
 
