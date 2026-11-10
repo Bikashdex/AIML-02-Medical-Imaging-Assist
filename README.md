@@ -23,6 +23,7 @@ A second, independent track segments the spleen from abdominal CT volumes using 
 Cloud Deployments (Live):
 
 🔗 Live API: https://aiml-02-medical-imaging-assist.onrender.com/docs
+
 🔗 Live Demo: https://aiml-02-medical-imaging-assist.onrender.com
 
 ## Two model tracks
